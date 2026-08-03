@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 
 import pygame
 
-from animatronics import ELENCO_BASE
+from animatronics import niveles_iniciales_personalizada
 from constants import (
     ALTO_PANTALLA,
     ANCHO_PANTALLA,
@@ -31,8 +31,6 @@ from constants import (
     COLOR_OPCION_NORMAL,
     COLOR_OPCION_RESALTADA,
     COLOR_VERDE_ENERGIA,
-    DIFICULTAD_MAXIMA,
-    DIFICULTAD_MINIMA,
     DIR_ASSETS_MENU,
     FUENTE_TAMANO_MENU,
     FUENTE_TAMANO_TITULO,
@@ -52,38 +50,22 @@ from constants import (
     MENU_TITULO_ALTO_MAXIMO,
     MENU_TITULO_Y,
     MENU_Y_PRIMERA_OPCION,
+    NIVEL_IA_MAXIMO,
+    NIVEL_IA_MINIMO,
     NOCHE_EXTRA,
     PATRON_MENU_FONDO_VARIANTES,
+    RESOLUCION_BASE,
     TITULO_JUEGO,
     VOLUMEN_MAXIMO,
     VOLUMEN_MINIMO,
     VOLUMEN_PASO,
 )
+from efectos import generar_frames_estatica
 from fuentes import crear_fuente
 
 # Claves de EntradaMenu que se controlan con una barra deslizante en vez de
 # con texto cíclico. Sus getters/setters viven en Configuracion y GestorAudio.
 CLAVES_DESLIZABLES = ("volumen_musica", "volumen_efectos")
-
-
-def _generar_frame_estatica() -> pygame.Surface:
-    """Genera un cuadro de ruido translúcido en escala de grises.
-
-    Se construye el buffer de píxeles con slicing de bytearray (resuelto en
-    C, no con un bucle Python por píxel) y se renderiza a baja resolución
-    para luego escalar: así el costo real de "por píxel" ocurre una sola vez
-    al precalcular los cuadros, no en cada fotograma dibujado.
-    """
-    ancho, alto = MENU_ESTATICA_ANCHO, MENU_ESTATICA_ALTO
-    total = ancho * alto
-    grises = random.randbytes(total)
-    pixeles = bytearray(total * 4)
-    pixeles[0::4] = grises
-    pixeles[1::4] = grises
-    pixeles[2::4] = grises
-    pixeles[3::4] = bytes((MENU_ESTATICA_OPACIDAD,)) * total
-    frame = pygame.image.frombuffer(bytes(pixeles), (ancho, alto), "RGBA").convert_alpha()
-    return pygame.transform.scale(frame, (ANCHO_PANTALLA, ALTO_PANTALLA))
 
 
 class SeccionMenu(Enum):
@@ -98,7 +80,7 @@ class SolicitudNoche:
 
     numero: int
     personalizada: bool = False
-    dificultades: Dict[str, int] = field(default_factory=dict)
+    niveles_ia: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -129,9 +111,9 @@ class MenuPrincipal:
         self.salir_solicitado = False
         self._deslizador_activo: Optional[str] = None  # clave del slider en arrastre
 
-        self.dificultades_personalizadas = {
-            config.nombre: config.dificultad for config in ELENCO_BASE
-        }
+        # Nivel de IA (0-20) elegido para cada personaje en la Noche
+        # Personalizada. Arrancan todos en 0, como en el género.
+        self.niveles_personalizados = niveles_iniciales_personalizada()
 
         self._fondo = None
         self._fondos_variantes: List[pygame.Surface] = []
@@ -244,8 +226,8 @@ class MenuPrincipal:
 
     def _entradas_personalizada(self) -> List[EntradaMenu]:
         entradas = [
-            EntradaMenu(f"dificultad::{nombre}", f"{nombre}: {nivel}")
-            for nombre, nivel in self.dificultades_personalizadas.items()
+            EntradaMenu(f"nivel_ia::{nombre}", f"{nombre}: {nivel}")
+            for nombre, nivel in self.niveles_personalizados.items()
         ]
         entradas.append(EntradaMenu("iniciar", self.idiomas.t("personalizada_iniciar")))
         entradas.append(EntradaMenu("volver", self.idiomas.t("personalizada_volver")))
@@ -333,7 +315,7 @@ class MenuPrincipal:
             self.solicitud = SolicitudNoche(
                 numero=NOCHE_EXTRA + 1,
                 personalizada=True,
-                dificultades=dict(self.dificultades_personalizadas),
+                niveles_ia=dict(self.niveles_personalizados),
             )
         else:
             # El resto de opciones llevan un valor asociado: activarlas con
@@ -343,7 +325,7 @@ class MenuPrincipal:
     def _ajustar_valor(self, entrada: EntradaMenu, delta: int, ciclico: bool = False):
         """Aplica las flechas izquierda/derecha sobre las opciones que tienen
         un valor asociado (idioma, resolución, volúmenes, modo streamer y
-        dificultades de la noche personalizada)."""
+        niveles de IA de la noche personalizada)."""
         if entrada.clave == "idioma":
             self._cambiar_idioma()
         elif entrada.clave == "pantalla_completa":
@@ -364,13 +346,13 @@ class MenuPrincipal:
             self.configuracion.guardar()
         elif entrada.clave == "modo_streamer":
             self._alternar_modo_streamer()
-        elif entrada.clave.startswith("dificultad::"):
+        elif entrada.clave.startswith("nivel_ia::"):
             nombre = entrada.clave.split("::", 1)[1]
-            nivel = self.dificultades_personalizadas[nombre] + delta
-            if ciclico and nivel > DIFICULTAD_MAXIMA:
-                nivel = DIFICULTAD_MINIMA
-            self.dificultades_personalizadas[nombre] = max(
-                DIFICULTAD_MINIMA, min(DIFICULTAD_MAXIMA, nivel)
+            nivel = self.niveles_personalizados[nombre] + delta
+            if ciclico and nivel > NIVEL_IA_MAXIMO:
+                nivel = NIVEL_IA_MINIMO
+            self.niveles_personalizados[nombre] = max(
+                NIVEL_IA_MINIMO, min(NIVEL_IA_MAXIMO, nivel)
             )
 
     @staticmethod
@@ -537,7 +519,12 @@ class MenuPrincipal:
             for ruta in sorted(DIR_ASSETS_MENU.glob(PATRON_MENU_FONDO_VARIANTES))
             if (imagen := self._cargar_fondo_escalado(ruta)) is not None
         ]
-        self._frames_estatica = [_generar_frame_estatica() for _ in range(MENU_ESTATICA_FRAMES)]
+        self._frames_estatica = generar_frames_estatica(
+            MENU_ESTATICA_FRAMES,
+            (MENU_ESTATICA_ANCHO, MENU_ESTATICA_ALTO),
+            RESOLUCION_BASE,
+            MENU_ESTATICA_OPACIDAD,
+        )
 
         if ARCHIVO_MENU_TITULO.exists():
             try:

@@ -17,7 +17,7 @@ from constants import (
     DIR_SONIDOS_SIN_COPYRIGHT,
     EXTENSIONES_AUDIO,
     PISTAS_MUSICA,
-    SUBCARPETA_AMBIENTE,
+    SUBCARPETA_CAMARAS,
     SUBCARPETA_EFECTOS,
     SUBCARPETA_MUSICA,
     VOLUMEN_EFECTOS_POR_DEFECTO,
@@ -72,19 +72,15 @@ class GestorAudio:
         return None
 
     def _buscar_musica(self, nombre_logico: str):
-        """Busca primero el archivo mapeado en PISTAS_MUSICA y, si no está en
-        la carpeta activa, uno que se llame como la pista lógica."""
-        candidatos = []
+        """Busca primero la carpeta y el archivo mapeados en PISTAS_MUSICA y,
+        si no están en el árbol activo, un archivo que se llame como la pista
+        lógica dentro de musica/."""
         mapeado = PISTAS_MUSICA.get(nombre_logico)
-        if mapeado:
-            candidatos.append(mapeado)
-        if nombre_logico not in candidatos:
-            candidatos.append(nombre_logico)
-        for candidato in candidatos:
-            ruta = self._buscar_archivo(SUBCARPETA_MUSICA, candidato)
+        if mapeado is not None:
+            ruta = self._buscar_archivo(*mapeado)
             if ruta is not None:
                 return ruta
-        return None
+        return self._buscar_archivo(SUBCARPETA_MUSICA, nombre_logico)
 
     def establecer_volumen_musica(self, volumen: int):
         self.volumen_musica = volumen
@@ -139,8 +135,9 @@ class GestorAudio:
             efecto.set_volume(self._proporcion(self.volumen_efectos))
             efecto.play()
 
-    def reproducir_ambiente(self, nombre: str):
-        self.reproducir_efecto(nombre, subcarpeta=SUBCARPETA_AMBIENTE)
+    def reproducir_efecto_camara(self, nombre: str):
+        """Sonidos del monitor de vigilancia (subcarpeta camaras/)."""
+        self.reproducir_efecto(nombre, subcarpeta=SUBCARPETA_CAMARAS)
 
     def aplicar_modo_streamer(self, activo: bool):
         """Cambia el árbol de audio en caliente y vuelve a lanzar la pista

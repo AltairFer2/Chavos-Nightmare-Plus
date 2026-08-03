@@ -10,8 +10,16 @@ junto a la reja de la Entrada.
 
 Cada habitación guarda su propio nombre de carpeta dentro de
 assets/camaras/, siguiendo la nomenclatura "Cámara <número> - <Nombre>"
-definida por el propietario del proyecto. Dentro de esa carpeta se espera
-un archivo "Cam <número> Selected.png" con la vista de esa cámara.
+definida por el propietario del proyecto. Dentro de esa carpeta van tres
+archivos:
+
+- "cam <número>.png": la imagen que ve el jugador por esa cámara.
+- "Marco Cam <número>.png": el marco del monitor (rótulo, REC y fecha), con
+  transparencia, que se superpone a la imagen.
+- "Cam <número> Selected.png": el mapa de la vecindad con esa cámara
+  resaltada, que es el menú de selección del panel.
+
+La Casa del Chavo no tiene "cam 8.png" porque solo tiene micrófono.
 """
 
 from dataclasses import dataclass, field
@@ -34,8 +42,19 @@ class Habitacion:
         return DIR_ASSETS_CAMARAS / self.carpeta_camara
 
     @property
-    def archivo_seleccionada(self) -> str:
-        return f"Cam {self.numero_camara} Selected.png"
+    def ruta_vista(self):
+        """Imagen que ve el jugador por esta cámara."""
+        return self.carpeta_assets / f"cam {self.numero_camara}.png"
+
+    @property
+    def ruta_marco(self):
+        """Marco del monitor con el rótulo de esta cámara."""
+        return self.carpeta_assets / f"Marco Cam {self.numero_camara}.png"
+
+    @property
+    def ruta_mapa(self):
+        """Mapa de la vecindad con esta cámara resaltada."""
+        return self.carpeta_assets / f"Cam {self.numero_camara} Selected.png"
 
 
 HABITACIONES: Dict[str, Habitacion] = {

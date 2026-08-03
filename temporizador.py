@@ -1,54 +1,62 @@
-"""Temporizador de la noche: controla la hora mostrada en pantalla
-(12am-6am) y el consumo de energía disponible para operar las cámaras."""
+"""Temporizador de la noche: lleva la hora mostrada en pantalla (12am-6am) y
+dispara los ticks de inteligencia artificial de los animatrónicos.
+
+El tiempo real se convierte en horas in-game y cada hora se divide en
+TICKS_POR_HORA intentos de movimiento. En cada tick, todos los animatrónicos
+tiran su dado de nivel_ia; el temporizador es quien marca el compás para que
+todos avancen sobre la misma base de tiempo.
+"""
 
 from constants import (
-    CONSUMO_ENERGIA_POR_SEGUNDO,
-    CONSUMO_EXTRA_CAMARAS_POR_SEGUNDO,
     DURACION_NOCHE_SEGUNDOS,
-    ENERGIA_MAXIMA,
     HORA_FIN_NOCHE,
     HORA_INICIO_NOCHE,
+    HORAS_DE_NOCHE,
+    SEGUNDOS_POR_TICK,
 )
 
 
-class Temporizador:
-    """Lleva el paso del tiempo de la noche y el nivel de energía."""
+class TemporizadorNoche:
+    """Avanza el reloj de la noche y emite los ticks de la IA."""
 
     def __init__(self):
         self.segundos_transcurridos = 0.0
-        self.energia = ENERGIA_MAXIMA
         self.noche_terminada = False
-        self.sin_energia = False
+        self._tiempo_para_siguiente_tick = SEGUNDOS_POR_TICK
 
-    def actualizar(self, dt: float, camaras_activas: bool):
+    def actualizar(self, dt: float, animatronics=()):
+        """Avanza el reloj y, cada vez que se cumple un tick, llama a
+        actualizar() en cada animatrónico recibido."""
         if self.noche_terminada:
             return
 
         self.segundos_transcurridos += dt
 
-        if not self.sin_energia:
-            consumo = CONSUMO_ENERGIA_POR_SEGUNDO
-            if camaras_activas:
-                consumo += CONSUMO_EXTRA_CAMARAS_POR_SEGUNDO
-            self.energia = max(0.0, self.energia - consumo * dt)
-            if self.energia <= 0.0:
-                self.sin_energia = True
+        self._tiempo_para_siguiente_tick -= dt
+        while self._tiempo_para_siguiente_tick <= 0.0:
+            self._tiempo_para_siguiente_tick += SEGUNDOS_POR_TICK
+            for animatronic in animatronics:
+                animatronic.actualizar()
 
         if self.segundos_transcurridos >= DURACION_NOCHE_SEGUNDOS:
             self.noche_terminada = True
 
+    def horas_transcurridas(self) -> int:
+        """Horas enteras de noche que ya pasaron, de 0 (12 am) a HORAS_DE_NOCHE.
+        Es la medida útil para comparar contra una hora concreta; hora_actual()
+        es solo para mostrar."""
+        return min(HORAS_DE_NOCHE, int(self.progreso() * HORAS_DE_NOCHE))
+
     def hora_actual(self) -> int:
         """Hora entera mostrada en el HUD (12, 1, 2... hasta HORA_FIN_NOCHE)."""
-        progreso = min(1.0, self.segundos_transcurridos / DURACION_NOCHE_SEGUNDOS)
-        rango_horas = (HORA_FIN_NOCHE - HORA_INICIO_NOCHE) % 12 or 12
-        hora = HORA_INICIO_NOCHE + int(progreso * rango_horas)
+        hora = min(HORA_INICIO_NOCHE + self.horas_transcurridas(), HORA_FIN_NOCHE)
         return 12 if hora == 0 else hora
 
-    def porcentaje_energia(self) -> float:
-        return self.energia / ENERGIA_MAXIMA
+    def progreso(self) -> float:
+        """Avance de la noche, de 0.0 (12am) a 1.0 (6am)."""
+        return min(1.0, self.segundos_transcurridos / DURACION_NOCHE_SEGUNDOS)
 
     def reiniciar(self):
         self.segundos_transcurridos = 0.0
-        self.energia = ENERGIA_MAXIMA
         self.noche_terminada = False
-        self.sin_energia = False
+        self._tiempo_para_siguiente_tick = SEGUNDOS_POR_TICK
