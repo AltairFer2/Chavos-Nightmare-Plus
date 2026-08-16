@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chaves-nightmare-plus"
+version = "0.1.0"
+description = "Survival horror de vigilancia nocturna ambientado en la vecindad de El Chavo del Ocho"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["pygame==2.6.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+vecindad = "vecindad.app.juego:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Deja importar el paquete desde src/ sin instalarlo. Las pruebas cubren la
+# lógica pura (dominio/), que no necesita pygame ni una ventana abierta.
+pythonpath = ["src"]

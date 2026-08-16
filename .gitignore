@@ -6,9 +6,18 @@ venv/
 env/
 build/
 dist/
-*.spec
 *.egg-info/
 .pytest_cache/
 .vscode/
 *.log
-*.claude/
+
+# Herramientas y configuración de asistentes de IA: no son parte del código
+# del juego y no deben quedar rastreadas en el repositorio.
+.claude/
+CLAUDE.md
+.cursor/
+.cursorrules
+.windsurfrules
+.github/copilot-instructions.md
+AGENTS.md
+GEMINI.md
