@@ -15,6 +15,7 @@ TEXTOS = {
     "ajustes_pantalla_completa": "Tela Cheia",
     "ajustes_resolucion": "Resolução",
     "ajustes_resolucion_ventana": "modo janela",
+    "ajustes_brillo": "Brilho",
     "ajustes_volumen_musica": "Volume da Música",
     "ajustes_volumen_efectos": "Volume dos Efeitos",
     "ajustes_modo_streamer": "Modo Streamer",
@@ -68,9 +69,8 @@ TEXTOS = {
     # Menu de pausa
     "pausa_titulo": "PAUSADO",
     "pausa_reanudar": "Retomar",
-    "pausa_sonido": "Som",
     "pausa_menu_principal": "Menu Principal",
-    "pausa_ayuda": "↑/↓ - Escolher   ENTER - Confirmar   ESC - Retomar",
+    "pausa_ayuda": "↑/↓ - Escolher   ←/→ - Ajustar   ENTER - Confirmar   ESC - Retomar",
     # Fin de partida
     "game_over_titulo": "VOCÊ FOI PEGO",
     "game_over_motivo": "{nombre} chegou até você.",
@@ -79,4 +79,5 @@ TEXTOS = {
     "victoria_titulo": "VOCÊ SOBREVIVEU À NOITE!",
     "victoria_personalizada": "VOCÊ SOBREVIVEU À NOITE PERSONALIZADA!",
     "ayuda_fin": "ENTER - Voltar ao menu   ESC - Sair",
+    "noche_superada_ayuda": "Cima/Baixo - Escolher   ENTER - Confirmar",
 }

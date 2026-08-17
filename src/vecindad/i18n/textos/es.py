@@ -16,6 +16,7 @@ TEXTOS = {
     "ajustes_pantalla_completa": "Pantalla Completa",
     "ajustes_resolucion": "Resolución",
     "ajustes_resolucion_ventana": "modo ventana",
+    "ajustes_brillo": "Brillo",
     "ajustes_volumen_musica": "Volumen Música",
     "ajustes_volumen_efectos": "Volumen Efectos",
     "ajustes_modo_streamer": "Modo Streamer",
@@ -69,9 +70,8 @@ TEXTOS = {
     # Menú de pausa
     "pausa_titulo": "PAUSA",
     "pausa_reanudar": "Reanudar",
-    "pausa_sonido": "Sonido",
     "pausa_menu_principal": "Menú Principal",
-    "pausa_ayuda": "↑/↓ - Elegir   ENTER - Confirmar   ESC - Reanudar",
+    "pausa_ayuda": "↑/↓ - Elegir   ←/→ - Ajustar   ENTER - Confirmar   ESC - Reanudar",
     # Fin de partida
     "game_over_titulo": "HAS SIDO ATRAPADO",
     "game_over_motivo": "{nombre} llegó hasta ti.",
@@ -80,4 +80,5 @@ TEXTOS = {
     "victoria_titulo": "¡SOBREVIVISTE LA NOCHE!",
     "victoria_personalizada": "¡SOBREVIVISTE LA NOCHE PERSONALIZADA!",
     "ayuda_fin": "ENTER - Volver al menú   ESC - Salir",
+    "noche_superada_ayuda": "Arriba/Abajo - Elegir   ENTER - Confirmar",
 }

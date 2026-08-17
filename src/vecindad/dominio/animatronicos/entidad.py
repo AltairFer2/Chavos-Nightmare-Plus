@@ -131,16 +131,28 @@ class Animatronic:
         if self.esta_acechando():
             self.activado = True
 
-    def descontar_espera(self, dt: float, jugador_escondido: bool = False) -> bool:
+    def descontar_espera(
+        self,
+        dt: float,
+        jugador_escondido: bool = False,
+        en_tregua: bool = False,
+    ) -> bool:
         """Consume el margen que le queda al jugador para reaccionar.
         Devuelve True el fotograma en que el personaje ataca.
 
         Escondido en el barril el margen ni siquiera corre para quien no
         puede alcanzarle ahí: el jugador está a salvo de ese, no contra
-        reloj."""
+        reloj.
+
+        Tampoco corre mientras dure la tregua, que es el rato del principio
+        en que el suelo todavía no le ha dado al jugador con qué responderle
+        (ver enfrentamiento.esta_en_tregua). Se rompe con el primer objeto
+        que le sirva, la haya usado bien o mal."""
         if not self.activo or not self.esta_acechando():
             return False
         if jugador_escondido and not self.puede_alcanzar_escondido():
+            return False
+        if en_tregua:
             return False
         self.segundos_para_atacar -= dt
         return self.segundos_para_atacar <= 0.0

@@ -39,6 +39,13 @@ from vecindad.mundo.posiciones import (
     POSICIONES_CON_OBJETOS,
 )
 
+# Segundos que puede tardar de media en aparecer un objeto, contando que el
+# jugador todavía tiene que ir hasta los Lavaderos, alumbrar el suelo y
+# recogerlo. Es el tope que hace jugable la noche: los animatrónicos esperan
+# a que tenga con qué responderles, así que un suelo lento no lo mata, pero
+# lo deja encerrado en el barril sin poder hacer nada.
+ESPERA_MAXIMA_POR_OBJETO = 20.0
+
 
 class TestLinterna:
     def test_arranca_apagada_y_con_la_bateria_llena(self):
@@ -163,6 +170,41 @@ class TestInventario:
         inventario.reiniciar()
         assert not inventario.tiene(ID_BATERIA)
 
+    def test_lo_que_lleva_encima_lo_puede_usar(self):
+        inventario = Inventario()
+        inventario.guardar(ID_CHURRUMINO)
+        assert inventario.puede_usar(ID_CHURRUMINO)
+
+    def test_recuerda_lo_que_gasto(self):
+        """Gastarlo no borra que lo tuvo: de eso depende que un objeto
+        malgastado no siga protegiendo al jugador (ver esta_en_tregua)."""
+        inventario = Inventario()
+        inventario.guardar(ID_CHURRUMINO)
+        inventario.gastar(ID_CHURRUMINO)
+        assert not inventario.tiene(ID_CHURRUMINO)
+        assert inventario.tuvo(ID_CHURRUMINO)
+
+    def test_no_recuerda_lo_que_nunca_recogio(self):
+        assert not Inventario().tuvo(ID_CHURRUMINO)
+
+    def test_la_memoria_se_borra_al_empezar_otra_noche(self):
+        inventario = Inventario()
+        inventario.guardar(ID_CHURRUMINO)
+        inventario.reiniciar()
+        assert not inventario.tuvo(ID_CHURRUMINO)
+
+    def test_no_puede_usar_lo_que_no_tiene(self):
+        assert not Inventario().puede_usar(ID_CAFE_CHURRUMINO)
+
+    def test_el_cafe_preparado_cuenta_aunque_falte_combinarlo(self):
+        """Con los dos ingredientes encima la respuesta para Jaimico ya está:
+        solo falta juntarlos. De esto depende que no le den una tregua de más
+        (ver tiene_respuesta_para)."""
+        inventario = Inventario()
+        inventario.guardar(ID_CAFE)
+        inventario.guardar(ID_CHURRUMINO)
+        assert inventario.puede_usar(ID_CAFE_CHURRUMINO)
+
 
 class TestCatalogoDeObjetos:
     def test_pedir_un_objeto_inexistente_falla(self):
@@ -234,6 +276,17 @@ class TestObjetosEnElSuelo:
 
     def test_las_noches_tardias_son_mas_tacanas(self):
         assert ObjetosEnElSuelo(6).probabilidad < ObjetosEnElSuelo(1).probabilidad
+
+    @pytest.mark.parametrize("noche", range(1, 7))
+    def test_ninguna_noche_hace_esperar_de_mas_por_un_objeto(self, noche):
+        """La espera media por objeto es intervalo / probabilidad, y solo hay
+        un sitio donde buscar desde que la Entrada dejó de ser accesible. Si
+        se pasa de este tope, el jugador se queda mirando el suelo vacío
+        mientras el elenco sigue llegando."""
+        espera = OBJETO_INTERVALO_APARICION_SEGUNDOS / ObjetosEnElSuelo(noche).probabilidad
+        assert espera <= ESPERA_MAXIMA_POR_OBJETO, (
+            f"noche {noche}: un objeto cada {espera:.0f} s de media"
+        )
 
 
 class TestJugador:

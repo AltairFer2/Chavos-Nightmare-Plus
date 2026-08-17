@@ -34,14 +34,21 @@ def test_pausar_y_reanudar_no_deja_residuos_en_otras_consultas():
     assert not gestor.en_pausa()
 
 
-def test_las_consultas_de_final_distinguen_derrota_de_victoria():
+def test_las_consultas_de_final_distinguen_derrota_de_noche_superada():
     gestor = GestorEstados()
     gestor.cambiar_a(EstadoJuego.GAME_OVER)
     assert gestor.termino_en_derrota()
-    assert not gestor.termino_en_victoria()
+    assert not gestor.en_reloj_victoria()
+    assert not gestor.en_menu_victoria()
 
-    gestor.cambiar_a(EstadoJuego.VICTORIA)
-    assert gestor.termino_en_victoria()
+    gestor.cambiar_a(EstadoJuego.NOCHE_SUPERADA_RELOJ)
+    assert gestor.en_reloj_victoria()
+    assert not gestor.en_menu_victoria()
+    assert not gestor.termino_en_derrota()
+
+    gestor.cambiar_a(EstadoJuego.NOCHE_SUPERADA_MENU)
+    assert gestor.en_menu_victoria()
+    assert not gestor.en_reloj_victoria()
     assert not gestor.termino_en_derrota()
 
 

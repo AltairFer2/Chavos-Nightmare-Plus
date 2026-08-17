@@ -10,15 +10,18 @@ la música y dibujar.
 
 import sys
 
+# pyrefly: ignore [missing-import]
 import pygame
 
 from ..config.audio import (
     EFECTO_CAMBIO_CAMARA,
     EFECTO_LLAMADA_BARRIGA,
+    EFECTO_NOCHE_SUPERADA,
     EFECTO_RAMON_SE_VA,
     EFECTO_REPARACION,
     EFECTO_SUSTO,
     EFECTOS_LLAMADA_FLORINDA,
+    PROPORCION_VOLUMEN_EN_PAUSA,
 )
 from ..config.interfaz import COLOR_NEGRO
 from ..config.ventana import ALTO_PANTALLA, ANCHO_PANTALLA, FPS
@@ -26,6 +29,7 @@ from ..dominio.animatronicos import (
     acechando_en,
     detectar_luz_mortal,
     detectar_luz_que_descarga,
+    esta_en_tregua,
     iluminados_en,
     nombres,
     resolver_arrojo,
@@ -52,13 +56,16 @@ from ..presentacion.hud import (
     InterfazJuego,
 )
 from ..presentacion.iconos import IconosObjetos
+from ..presentacion.inicio_noche import PeriodicoInicial, TarjetaNoche
 from ..presentacion.jumpscare import Susto
 from ..presentacion.menu import (
     SOLICITUD_MENU_PRINCIPAL,
     SOLICITUD_REANUDAR,
     MenuPausa,
     MenuPrincipal,
+    SolicitudNoche,
 )
+from ..presentacion.noche_superada import SOLICITUD_CONTINUAR, MenuVictoria, RelojVictoria
 from ..presentacion.panel_servicios import PanelServicios
 from ..presentacion.vista import VistaJugador
 from .aviso import AvisoTemporal
@@ -72,8 +79,13 @@ PISTAS_POR_ESTADO = {
     EstadoJuego.MENU: "menu",
     EstadoJuego.JUGANDO: "noche",
     EstadoJuego.GAME_OVER: "game_over",
-    EstadoJuego.VICTORIA: "victoria",
 }
+
+# Estados que se ven en silencio: la música del menú se corta al entrar a la
+# noche y no vuelve hasta que el jugador está en el patio. El periódico y la
+# tarjeta son el cambio de tono entre el menú y la noche, y con la música del
+# menú encima no se sentiría como tal.
+ESTADOS_EN_SILENCIO = (EstadoJuego.PERIODICO, EstadoJuego.TARJETA_NOCHE)
 
 # Servicios que dejan las cámaras otra vez en pie al terminar.
 SERVICIOS_QUE_REPARAN_CAMARAS = (Servicio.CAMARAS, Servicio.TODO)
@@ -108,7 +120,9 @@ class Juego:
         # Todo se dibuja en gestor_pantalla.lienzo (tamaño fijo) y se escala
         # a la ventana al presentar el fotograma.
         self.gestor_pantalla = GestorPantalla(
-            self.configuracion.resolucion, self.configuracion.pantalla_completa
+            self.configuracion.resolucion,
+            self.configuracion.pantalla_completa,
+            self.configuracion.brillo,
         )
         self.pantalla = self.gestor_pantalla.lienzo
 
@@ -123,7 +137,9 @@ class Juego:
             self.idiomas, self.progreso, self.configuracion, self.audio,
             self.gestor_pantalla,
         )
-        self.menu_pausa = MenuPausa(self.idiomas, self.configuracion, self.audio)
+        self.menu_pausa = MenuPausa(
+            self.idiomas, self.configuracion, self.audio, self.gestor_pantalla
+        )
         # Una sola hoja de iconos compartida por el HUD y por el suelo.
         self.iconos = IconosObjetos()
         self.interfaz = InterfazJuego(self.idiomas, self.iconos)
@@ -137,6 +153,10 @@ class Juego:
         self.servicios = ServiciosUtilidad()
         self.objetos_en_suelo = ObjetosEnElSuelo(1)
         self.susto = Susto()
+        self.reloj_victoria = RelojVictoria(self.idiomas)
+        self.menu_victoria = MenuVictoria(self.idiomas)
+        self.periodico = PeriodicoInicial()
+        self.tarjeta_noche = TarjetaNoche(self.idiomas)
 
         self.noche = Noche()
         self.punto_luz = (ANCHO_PANTALLA // 2, ALTO_PANTALLA // 2)
@@ -148,6 +168,15 @@ class Juego:
     # Ciclo de vida de una noche
     # ------------------------------------------------------------------
     def iniciar_noche(self, solicitud):
+        """Deja la noche montada y arranca las pantallas de entrada. Todo
+        queda listo antes de enseñarlas, así que mientras se leen ya no hay
+        nada que preparar: son la transición entre el menú y el patio."""
+        nueva_partida = getattr(solicitud, "nueva_partida", False)
+        if nueva_partida:
+            # Nuevo Juego empieza la campaña otra vez: se borra el avance en
+            # el acto, no al terminar la noche, para que salir a mitad no
+            # deje Continuar apuntando a la partida vieja.
+            self.progreso.empezar_de_cero()
         self.noche = Noche.desde_solicitud(solicitud)
         self.temporizador.reiniciar(self.noche.intervalo_movimiento)
         self.jugador.reiniciar()
@@ -160,15 +189,36 @@ class Juego:
         self.sistema_camaras.reparar()
         self.panel_servicios.activo = False
         self.aviso.limpiar()
-        self.gestor_estados.cambiar_a(EstadoJuego.JUGANDO)
+        self._entrar_a_la_noche(nueva_partida)
+
+    def _entrar_a_la_noche(self, nueva_partida: bool):
+        """El periódico solo sale al empezar de cero (y solo si su arte
+        existe); la tarjeta de la noche, siempre."""
+        if nueva_partida and self.periodico.iniciar():
+            self.gestor_estados.cambiar_a(EstadoJuego.PERIODICO)
+            return
+        self._mostrar_tarjeta_de_la_noche()
+
+    def _mostrar_tarjeta_de_la_noche(self):
+        self.tarjeta_noche.iniciar(self.noche.numero, self.noche.personalizada)
+        self.gestor_estados.cambiar_a(EstadoJuego.TARJETA_NOCHE)
 
     def volver_al_menu(self):
+        self.audio.restaurar_volumen()
         self.menu.volver_al_inicio()
         self.gestor_estados.cambiar_a(EstadoJuego.MENU)
 
     def _pausar(self):
+        """La partida se congela y el audio baja a la mitad: en pausa el
+        jugador suele estar atendiendo otra cosa, y el juego no tiene por qué
+        seguir sonando encima."""
         self.menu_pausa.abrir()
+        self.audio.atenuar(PROPORCION_VOLUMEN_EN_PAUSA)
         self.gestor_estados.cambiar_a(EstadoJuego.PAUSA)
+
+    def _reanudar(self):
+        self.audio.restaurar_volumen()
+        self.gestor_estados.cambiar_a(EstadoJuego.JUGANDO)
 
     def _perder(self, nombre: str, clave_motivo: str):
         self.noche.registrar_derrota(nombre, clave_motivo)
@@ -208,6 +258,8 @@ class Juego:
                 self.menu.manejar_evento(evento, posicion)
             elif self.gestor_estados.en_pausa():
                 self.menu_pausa.manejar_evento(evento, posicion)
+            elif self.gestor_estados.en_menu_victoria():
+                self.menu_victoria.manejar_evento(evento, posicion)
             elif evento.type == pygame.KEYDOWN:
                 self._procesar_tecla(evento.key)
             elif evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
@@ -217,6 +269,8 @@ class Juego:
             self._atender_menu()
         elif self.gestor_estados.en_pausa():
             self._atender_pausa()
+        elif self.gestor_estados.en_menu_victoria():
+            self._atender_menu_victoria()
 
     def _atender_menu(self):
         if self.menu.salir_solicitado:
@@ -229,14 +283,21 @@ class Juego:
     def _atender_pausa(self):
         solicitud = self.menu_pausa.consumir_solicitud()
         if solicitud == SOLICITUD_REANUDAR:
-            self.gestor_estados.cambiar_a(EstadoJuego.JUGANDO)
+            self._reanudar()
+        elif solicitud == SOLICITUD_MENU_PRINCIPAL:
+            self.volver_al_menu()
+
+    def _atender_menu_victoria(self):
+        solicitud = self.menu_victoria.consumir_solicitud()
+        if solicitud == SOLICITUD_CONTINUAR:
+            self.iniciar_noche(SolicitudNoche(numero=self.progreso.proxima_noche))
         elif solicitud == SOLICITUD_MENU_PRINCIPAL:
             self.volver_al_menu()
 
     def _procesar_tecla(self, tecla):
         accion = accion_de(tecla)
 
-        if self.gestor_estados.estado in (EstadoJuego.GAME_OVER, EstadoJuego.VICTORIA):
+        if self.gestor_estados.estado is EstadoJuego.GAME_OVER:
             if accion is Accion.CONFIRMAR:
                 self.volver_al_menu()
             elif accion is Accion.ESCAPE:
@@ -446,10 +507,41 @@ class Juego:
             # la batería avanzan mientras el menú de pausa está abierto.
             return
 
+        if self.gestor_estados.en_periodico():
+            self.periodico.actualizar(dt)
+            if self.periodico.termino:
+                self._mostrar_tarjeta_de_la_noche()
+            return
+
+        if self.gestor_estados.en_tarjeta_noche():
+            self.tarjeta_noche.actualizar(dt)
+            if self.tarjeta_noche.termino:
+                self.gestor_estados.cambiar_a(EstadoJuego.JUGANDO)
+            return
+
         if self.gestor_estados.en_susto():
             self.susto.actualizar(dt)
             if self.susto.termino:
                 self.gestor_estados.cambiar_a(EstadoJuego.GAME_OVER)
+            return
+
+        if self.gestor_estados.en_reloj_victoria():
+            self.reloj_victoria.actualizar(dt)
+            if self.reloj_victoria.debe_sonar:
+                # Golpe de sonido de un solo disparo, justo en el instante en
+                # que el reloj cruza de 5:59 a 6:00. No es música de fondo:
+                # no se repite ni sigue sonando durante el menú.
+                self.audio.reproducir_efecto(EFECTO_NOCHE_SUPERADA)
+            if self.reloj_victoria.termino:
+                self.menu_victoria.abrir(
+                    self.noche.personalizada, self.progreso.proxima_noche,
+                    self.reloj_victoria.particulas,
+                )
+                self.gestor_estados.cambiar_a(EstadoJuego.NOCHE_SUPERADA_MENU)
+            return
+
+        if self.gestor_estados.en_menu_victoria():
+            self.menu_victoria.actualizar(dt)
             return
 
         if not self.gestor_estados.jugando():
@@ -484,7 +576,8 @@ class Juego:
     def _ganar_la_noche(self):
         if not self.noche.personalizada:
             self.progreso.registrar_noche_completada(self.noche.numero)
-        self.gestor_estados.cambiar_a(EstadoJuego.VICTORIA)
+        self.reloj_victoria.iniciar(self.noche.personalizada)
+        self.gestor_estados.cambiar_a(EstadoJuego.NOCHE_SUPERADA_RELOJ)
 
     def _atender_tiras(self):
         """Pasar el ratón por una de las pestañas de abajo levanta ese panel,
@@ -546,15 +639,30 @@ class Juego:
 
         Dentro del barril el jugador está a salvo de casi todos: solo Don
         Ramón y Doña Florinda lo alcanzan ahí, y los demás únicamente si ya
-        los alumbró alguna vez (ver Animatronic.puede_alcanzar_escondido)."""
+        los alumbró alguna vez (ver Animatronic.puede_alcanzar_escondido).
+
+        Y a quien se quita con un objeto no se le corre el margen hasta que
+        el suelo le haya dado al jugador la respuesta al menos una vez: los
+        objetos salen por sorteo, así que sin esa tregua la noche podría
+        matarlo por una mala racha y no por algo que hiciera mal. La tregua
+        se acaba con el primer objeto que le sirva, lo haya aprovechado o
+        malgastado (ver esta_en_tregua)."""
         for animatronic in self.noche.animatronics:
-            if animatronic.descontar_espera(dt, self.jugador.esta_escondido):
+            if animatronic.descontar_espera(
+                dt,
+                self.jugador.esta_escondido,
+                esta_en_tregua(animatronic, self.inventario),
+            ):
                 self._perder(animatronic.nombre, MOTIVO_ATRAPADO)
                 return True
         return False
 
     def _actualizar_musica(self):
-        pista = PISTAS_POR_ESTADO.get(self.gestor_estados.estado)
+        estado = self.gestor_estados.estado
+        if estado in ESTADOS_EN_SILENCIO:
+            self.audio.detener_musica()
+            return
+        pista = PISTAS_POR_ESTADO.get(estado)
         if pista:
             self.audio.reproducir_musica(pista)
 
@@ -566,6 +674,10 @@ class Juego:
 
         if self.gestor_estados.en_menu():
             self.menu.dibujar(self.pantalla)
+        elif self.gestor_estados.en_periodico():
+            self.periodico.dibujar(self.pantalla)
+        elif self.gestor_estados.en_tarjeta_noche():
+            self.tarjeta_noche.dibujar(self.pantalla)
         elif self.gestor_estados.jugando():
             self._dibujar_partida()
         elif self.gestor_estados.en_pausa():
@@ -581,8 +693,10 @@ class Juego:
                 self.noche.derrota.nombre_atacante,
                 self.noche.derrota.clave_motivo,
             )
-        elif self.gestor_estados.termino_en_victoria():
-            self.interfaz.dibujar_victoria(self.pantalla, self.noche.personalizada)
+        elif self.gestor_estados.en_reloj_victoria():
+            self.reloj_victoria.dibujar(self.pantalla)
+        elif self.gestor_estados.en_menu_victoria():
+            self.menu_victoria.dibujar(self.pantalla)
 
     def _dibujar_partida(self):
         if self.sistema_camaras.activo:

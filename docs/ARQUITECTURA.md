@@ -142,17 +142,21 @@ Lee el estado del dominio y lo pinta. Nunca decide reglas.
 
 ```
 presentacion/
-├── menu/                 menú principal, ajustes y noche personalizada
+├── menu/                 menú principal, ajustes, pausa y noche personalizada
 │   ├── modelo.py         SolicitudNoche, EntradaMenu, secciones
 │   ├── secciones.py      qué opciones muestra cada sección
+│   ├── ajustes.py        ControlAjustes: qué hace cada opción de Ajustes
 │   ├── deslizador.py     las barras de volumen
 │   ├── fondo.py          fondo animado y logotipo
-│   └── principal.py      MenuPrincipal, que junta lo anterior
+│   ├── principal.py      MenuPrincipal, que junta lo anterior
+│   └── pausa.py          MenuPausa, con los mismos Ajustes que el principal
 ├── camaras.py            el monitor a pantalla completa
 ├── mapa_camaras.py       el mapa que hace de selector de cámara
 ├── vista.py              lo que el jugador ve, con la linterna
 ├── hud.py                noche, hora, batería, inventario, finales
 ├── panel_servicios.py    el tablero del barril
+├── inicio_noche.py       el periódico y la tarjeta de "Noche N - 12:00 AM"
+├── noche_superada.py     el reloj de las 6:00 y el menú de continuar
 ├── iconos.py             iconos recortados de su hoja
 └── efectos.py            estática y líneas de barrido, precalculadas
 

@@ -13,6 +13,7 @@ en silencio: la ausencia de assets no debe impedir jugar.
 import random
 from typing import Optional
 
+# pyrefly: ignore [missing-import]
 import pygame
 
 from ..config.audio import (
@@ -40,11 +41,13 @@ class GestorAudio:
         self.modo_streamer = bool(modo_streamer)
         self.volumen_musica = volumen_musica
         self.volumen_efectos = volumen_efectos
+        # Factor temporal sobre todo lo que suena, sin tocar las preferencias
+        # guardadas. Hoy solo lo usa la pausa.
+        self._atenuacion = 1.0
         self.disponible = self._inicializar_mezclador()
         self._pista_actual = None
         self._efectos_cache = {}
-        if self.disponible:
-            pygame.mixer.music.set_volume(self._proporcion(self.volumen_musica))
+        self._aplicar_volumen_musica()
 
     @staticmethod
     def _inicializar_mezclador() -> bool:
@@ -60,10 +63,25 @@ class GestorAudio:
             return DIR_SONIDOS_SIN_COPYRIGHT
         return DIR_SONIDOS_CON_COPYRIGHT
 
-    @staticmethod
-    def _proporcion(volumen: int) -> float:
-        """Convierte el volumen en porcentaje (0-100) al 0.0-1.0 de pygame."""
-        return max(0.0, min(1.0, volumen / VOLUMEN_MAXIMO))
+    def _proporcion(self, volumen: int) -> float:
+        """Convierte el volumen en porcentaje (0-100) al 0.0-1.0 de pygame,
+        ya con la atenuación temporal aplicada."""
+        return max(0.0, min(1.0, volumen / VOLUMEN_MAXIMO)) * self._atenuacion
+
+    def _aplicar_volumen_musica(self):
+        if self.disponible:
+            pygame.mixer.music.set_volume(self._proporcion(self.volumen_musica))
+
+    def atenuar(self, proporcion: float):
+        """Deja todo el audio en esa fracción de su volumen. No toca las
+        preferencias del jugador: es lo que hace la pausa para que el juego
+        no siga sonando encima de lo que esté haciendo."""
+        self._atenuacion = max(0.0, min(1.0, proporcion))
+        self._aplicar_volumen_musica()
+
+    def restaurar_volumen(self):
+        """Deshace la atenuación: se vuelve a oír el volumen elegido."""
+        self.atenuar(1.0)
 
     def _buscar_archivo(self, subcarpeta: str, nombre: str):
         carpeta = self.carpeta_base / subcarpeta
@@ -86,8 +104,7 @@ class GestorAudio:
 
     def establecer_volumen_musica(self, volumen: int):
         self.volumen_musica = volumen
-        if self.disponible:
-            pygame.mixer.music.set_volume(self._proporcion(volumen))
+        self._aplicar_volumen_musica()
 
     def establecer_volumen_efectos(self, volumen: int):
         self.volumen_efectos = volumen

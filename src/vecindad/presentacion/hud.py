@@ -262,11 +262,3 @@ class InterfazJuego:
 
         ayuda = self.fuente_texto.render(self.idiomas.t("ayuda_fin"), True, COLOR_BLANCO)
         superficie.blit(ayuda, ayuda.get_rect(center=(ANCHO_PANTALLA // 2, 410)))
-
-    def dibujar_victoria(self, superficie: pygame.Surface, noche_personalizada: bool = False):
-        superficie.fill(COLOR_NEGRO)
-        clave = "victoria_personalizada" if noche_personalizada else "victoria_titulo"
-        texto = self.fuente_titulo.render(self.idiomas.t(clave), True, COLOR_VERDE_ENERGIA)
-        superficie.blit(texto, texto.get_rect(center=(ANCHO_PANTALLA // 2, 260)))
-        ayuda = self.fuente_texto.render(self.idiomas.t("ayuda_fin"), True, COLOR_BLANCO)
-        superficie.blit(ayuda, ayuda.get_rect(center=(ANCHO_PANTALLA // 2, 350)))

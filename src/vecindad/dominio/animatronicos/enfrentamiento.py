@@ -17,7 +17,7 @@ from typing import List, Optional
 
 from ...config.jugabilidad import SEGUNDOS_RETRASO_CHURRUMINO
 from ..linterna import esta_iluminado
-from ..objetos import ID_CHURRUMINO, obtener_objeto
+from ..objetos import ID_CHURRUMINO, objetos_que_ahuyentan_a, obtener_objeto
 from . import nombres
 from .entidad import Animatronic
 
@@ -89,6 +89,43 @@ def detectar_luz_que_descarga(animatronics, id_posicion: str, punto_luz):
     return _alumbrado_de_cerca(
         animatronics, id_posicion, punto_luz,
         lambda a: a.configuracion.luz_descarga_linterna and not a.configuracion.luz_mortal,
+    )
+
+
+def _respuestas_posibles(animatronic: Animatronic):
+    """Los objetos con los que este personaje se quita de encima ahora mismo.
+
+    A Doña Clotilde solo le sirve lo que haya pedido: es la única a la que no
+    le vale cualquier objeto de su lista.
+    """
+    if animatronic.objeto_pedido is not None:
+        return (animatronic.objeto_pedido,)
+    return objetos_que_ahuyentan_a(animatronic.nombre)
+
+
+def esta_en_tregua(animatronic: Animatronic, inventario) -> bool:
+    """Si todavía no puede matar al jugador porque el suelo no le ha dado la
+    respuesta ni una sola vez en toda la noche.
+
+    Mientras sea True, ese personaje no descuenta el margen de ataque (ver
+    Animatronic.descontar_espera): se planta delante y mete miedo, pero no
+    mata. Es un seguro contra perder por una mala racha del sorteo del suelo,
+    no un escudo:
+
+    - La tregua se rompe en cuanto el objeto le pasa por las manos, y ya no
+      vuelve. Si lo desperdició tirándoselo a quien no era, el personaje lo
+      mata igual aunque el jugador se haya quedado sin nada: la respuesta
+      existió y la gastó mal.
+    - Quien no se contrarresta con objetos (Don Ramón con el Sr. Barriga,
+      Doña Florinda con el audio) nunca está en tregua: su respuesta está en
+      el panel del barril y no depende de la suerte.
+    """
+    opciones = _respuestas_posibles(animatronic)
+    if not opciones:
+        return False
+    return not any(
+        inventario.puede_usar(id_objeto) or inventario.tuvo(id_objeto)
+        for id_objeto in opciones
     )
 
 

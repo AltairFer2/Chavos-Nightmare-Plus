@@ -21,5 +21,16 @@ RESOLUCIONES_DISPONIBLES = (
 # esa preferencia es la que manda.
 PANTALLA_COMPLETA_POR_DEFECTO = True
 
+# Brillo de la imagen final, en porcentaje: 100 es la imagen tal cual, por
+# debajo se oscurece y por encima se aclara. Es un ajuste de comodidad, no
+# una mecánica: el juego es oscuro a propósito, pero cada monitor lo muestra
+# distinto y una escena de noche puede quedar ilegible. El tope se queda en
+# 150 para que subirlo no borre del todo la penumbra.
+BRILLO_MINIMO = 50
+BRILLO_MAXIMO = 150
+BRILLO_NEUTRO = 100
+BRILLO_POR_DEFECTO = BRILLO_NEUTRO
+BRILLO_PASO = 10
+
 FPS = 60
 TITULO_JUEGO = "Chaves Nightmare Plus +"

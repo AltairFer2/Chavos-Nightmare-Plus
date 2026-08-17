@@ -17,7 +17,6 @@ PISTAS_MUSICA = {
     "menu": (SUBCARPETA_MUSICA, "el-chavo-intro"),
     "noche": (SUBCARPETA_AMBIENTE, "fondo game"),
     "game_over": (SUBCARPETA_MUSICA, "game_over"),
-    "victoria": (SUBCARPETA_MUSICA, "victoria"),
 }
 
 # Efecto que suena al saltar de una cámara a otra (subcarpeta camaras/).
@@ -47,9 +46,19 @@ EFECTO_REPARACION = "reparacion"
 # variantes, o ninguna, sin que nada falle.
 EFECTOS_LLAMADA_FLORINDA = ("audio 1", "audio 2", "audio 3")
 
+# Efecto de la noche superada (subcarpeta efectos/). Suena una sola vez,
+# justo en el instante en que el reloj salta de 5:59 a 6:00 am; no es
+# música de fondo, así que no se repite en bucle ni sigue sonando después.
+EFECTO_NOCHE_SUPERADA = "noche superada"
+
 # Volumen en porcentaje (0-100), como se muestra y se guarda.
 VOLUMEN_MINIMO = 0
 VOLUMEN_MAXIMO = 100
 VOLUMEN_PASO = 10
 VOLUMEN_MUSICA_POR_DEFECTO = 70
 VOLUMEN_EFECTOS_POR_DEFECTO = 80
+
+# Cuánto del volumen elegido se oye con la partida en pausa. No cambia las
+# preferencias del jugador: es una atenuación temporal que se deshace al
+# reanudar, para poder hablar o atender algo sin bajar nada a mano.
+PROPORCION_VOLUMEN_EN_PAUSA = 0.5

@@ -15,6 +15,7 @@ TEXTOS = {
     "ajustes_pantalla_completa": "Fullscreen",
     "ajustes_resolucion": "Resolution",
     "ajustes_resolucion_ventana": "windowed mode",
+    "ajustes_brillo": "Brightness",
     "ajustes_volumen_musica": "Music Volume",
     "ajustes_volumen_efectos": "SFX Volume",
     "ajustes_modo_streamer": "Streamer Mode",
@@ -68,9 +69,8 @@ TEXTOS = {
     # Pause menu
     "pausa_titulo": "PAUSED",
     "pausa_reanudar": "Resume",
-    "pausa_sonido": "Sound",
     "pausa_menu_principal": "Main Menu",
-    "pausa_ayuda": "↑/↓ - Choose   ENTER - Confirm   ESC - Resume",
+    "pausa_ayuda": "↑/↓ - Choose   ←/→ - Adjust   ENTER - Confirm   ESC - Resume",
     # Fin de partida
     "game_over_titulo": "YOU WERE CAUGHT",
     "game_over_motivo": "{nombre} reached you.",
@@ -79,4 +79,5 @@ TEXTOS = {
     "victoria_titulo": "YOU SURVIVED THE NIGHT!",
     "victoria_personalizada": "YOU SURVIVED THE CUSTOM NIGHT!",
     "ayuda_fin": "ENTER - Back to menu   ESC - Quit",
+    "noche_superada_ayuda": "Up/Down - Choose   ENTER - Confirm",
 }

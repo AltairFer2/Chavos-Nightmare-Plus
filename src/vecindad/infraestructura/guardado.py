@@ -2,8 +2,8 @@
 
 Se usan dos archivos JSON separados dentro de DIR_DATOS_USUARIO:
 - progreso.json: hasta qué noche llegó el jugador (define los desbloqueos).
-- configuracion.json: idioma, modo streamer, pantalla completa, resolución
-  y volúmenes.
+- configuracion.json: idioma, modo streamer, pantalla completa, resolución,
+  brillo y volúmenes.
 
 Están separados a propósito: borrar o corromper el progreso no debe hacer
 que el jugador pierda también sus preferencias, ni al revés. Si un archivo
@@ -26,6 +26,9 @@ from ..config.rutas import (
     DIR_DATOS_USUARIO,
 )
 from ..config.ventana import (
+    BRILLO_MAXIMO,
+    BRILLO_MINIMO,
+    BRILLO_POR_DEFECTO,
     PANTALLA_COMPLETA_POR_DEFECTO,
     RESOLUCION_BASE,
     RESOLUCIONES_DISPONIBLES,
@@ -57,11 +60,19 @@ def _escribir_json(ruta: Path, datos: dict) -> bool:
 
 
 class ProgresoJugador:
-    """Noche más avanzada que el jugador ha superado. De este único dato se
-    derivan los desbloqueos del menú."""
+    """Noche más avanzada que el jugador ha superado, más el dato de si
+    llegó a empezar una partida. De ahí se derivan los desbloqueos del menú.
 
-    def __init__(self, noches_completadas: int = 0):
+    Hacen falta los dos: recién empezada una partida nueva no hay ninguna
+    noche superada todavía, pero Continuar tiene que ofrecer la noche 1 en
+    vez de decir que no hay partida.
+    """
+
+    def __init__(self, noches_completadas: int = 0, partida_iniciada: bool = False):
         self.noches_completadas = self._sanear(noches_completadas)
+        # Haber superado noches implica haber empezado, aunque el archivo
+        # venga de una versión anterior que no guardaba este dato.
+        self.partida_iniciada = bool(partida_iniciada) or self.noches_completadas > 0
 
     @staticmethod
     def _sanear(valor) -> int:
@@ -71,7 +82,7 @@ class ProgresoJugador:
 
     @property
     def hay_partida_guardada(self) -> bool:
-        return self.noches_completadas > 0
+        return self.partida_iniciada
 
     @property
     def proxima_noche(self) -> int:
@@ -94,16 +105,38 @@ class ProgresoJugador:
         if numero_noche <= self.noches_completadas:
             return False
         self.noches_completadas = self._sanear(numero_noche)
+        self.partida_iniciada = True
         self.guardar()
         return True
+
+    def empezar_de_cero(self) -> bool:
+        """Borra el avance: es lo que hace Nuevo Juego.
+
+        A partir de aquí Continuar vuelve a ofrecer la noche 1, y la Noche 6
+        y la Personalizada se cierran hasta volver a ganárselas. Se persiste
+        al momento, así que sigue así aunque el jugador cierre el juego sin
+        terminar la noche que acaba de empezar.
+        """
+        self.noches_completadas = 0
+        self.partida_iniciada = True
+        return self.guardar()
 
     @classmethod
     def cargar(cls) -> "ProgresoJugador":
         datos = _leer_json(ARCHIVO_PROGRESO)
-        return cls(noches_completadas=datos.get("noches_completadas", 0))
+        return cls(
+            noches_completadas=datos.get("noches_completadas", 0),
+            partida_iniciada=datos.get("partida_iniciada", False),
+        )
 
     def guardar(self) -> bool:
-        return _escribir_json(ARCHIVO_PROGRESO, {"noches_completadas": self.noches_completadas})
+        return _escribir_json(
+            ARCHIVO_PROGRESO,
+            {
+                "noches_completadas": self.noches_completadas,
+                "partida_iniciada": self.partida_iniciada,
+            },
+        )
 
 
 def existe_configuracion_guardada() -> bool:
@@ -114,7 +147,8 @@ def existe_configuracion_guardada() -> bool:
 
 
 class Configuracion:
-    """Preferencias del jugador: idioma, modo streamer, resolución y volúmenes."""
+    """Preferencias del jugador: idioma, modo streamer, resolución, brillo y
+    volúmenes."""
 
     def __init__(
         self,
@@ -122,6 +156,7 @@ class Configuracion:
         modo_streamer: bool = False,
         pantalla_completa: bool = PANTALLA_COMPLETA_POR_DEFECTO,
         resolucion=RESOLUCION_BASE,
+        brillo: int = BRILLO_POR_DEFECTO,
         volumen_musica: int = VOLUMEN_MUSICA_POR_DEFECTO,
         volumen_efectos: int = VOLUMEN_EFECTOS_POR_DEFECTO,
     ):
@@ -129,6 +164,7 @@ class Configuracion:
         self.modo_streamer = bool(modo_streamer)
         self.pantalla_completa = bool(pantalla_completa)
         self.resolucion = self._sanear_resolucion(resolucion)
+        self.brillo = self._sanear_brillo(brillo)
         self.volumen_musica = self._sanear_volumen(volumen_musica, VOLUMEN_MUSICA_POR_DEFECTO)
         self.volumen_efectos = self._sanear_volumen(volumen_efectos, VOLUMEN_EFECTOS_POR_DEFECTO)
 
@@ -141,6 +177,13 @@ class Configuracion:
         except (TypeError, ValueError, IndexError, KeyError):
             return RESOLUCION_BASE
         return candidata if candidata in RESOLUCIONES_DISPONIBLES else RESOLUCION_BASE
+
+    @staticmethod
+    def _sanear_brillo(valor) -> int:
+        """Un brillo fuera de rango dejaría la pantalla negra o en blanco."""
+        if not isinstance(valor, int) or isinstance(valor, bool):
+            return BRILLO_POR_DEFECTO
+        return max(BRILLO_MINIMO, min(BRILLO_MAXIMO, valor))
 
     @staticmethod
     def _sanear_volumen(valor, por_defecto: int) -> int:
@@ -156,6 +199,7 @@ class Configuracion:
             modo_streamer=datos.get("modo_streamer", False),
             pantalla_completa=datos.get("pantalla_completa", PANTALLA_COMPLETA_POR_DEFECTO),
             resolucion=datos.get("resolucion", RESOLUCION_BASE),
+            brillo=datos.get("brillo", BRILLO_POR_DEFECTO),
             volumen_musica=datos.get("volumen_musica", VOLUMEN_MUSICA_POR_DEFECTO),
             volumen_efectos=datos.get("volumen_efectos", VOLUMEN_EFECTOS_POR_DEFECTO),
         )
@@ -168,6 +212,7 @@ class Configuracion:
                 "modo_streamer": self.modo_streamer,
                 "pantalla_completa": self.pantalla_completa,
                 "resolucion": list(self.resolucion),
+                "brillo": self.brillo,
                 "volumen_musica": self.volumen_musica,
                 "volumen_efectos": self.volumen_efectos,
             },

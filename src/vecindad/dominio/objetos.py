@@ -4,9 +4,9 @@ Hay tres clases de objeto:
 
 - Los seis defensivos (paleta, pelota cuadrada, pelota redonda, balero,
   chipote chillón y churrumino). Hay un único ejemplar de cada uno por
-  noche: se encuentra tirado en la Entrada o en los Lavaderos y, una vez
-  arrojado, ya no vuelve a aparecer. Gastar el equivocado deja al jugador
-  sin respuesta para quien sí lo necesitaba: ese es el riesgo central.
+  noche: se encuentra tirado en los Lavaderos y, una vez arrojado, ya no
+  vuelve a aparecer. Gastar el equivocado deja al jugador sin respuesta para
+  quien sí lo necesitaba: ese es el riesgo central.
 - El café, que no se arroja: se combina con el churrumino para preparar el
   café con churrumino, lo único que calma a Jaimico.
 - Las baterías de linterna, que sí reaparecen durante toda la noche.
@@ -101,6 +101,20 @@ def obtener_objeto(id_objeto: str) -> Objeto:
         return CATALOGO[id_objeto]
     except KeyError as error:
         raise ValueError(f"Objeto desconocido: {id_objeto}") from error
+
+
+def objetos_que_ahuyentan_a(nombre: str) -> Tuple[str, ...]:
+    """Con qué objetos se puede quitar de encima a ese personaje.
+
+    Es el índice inverso de `Objeto.elimina`, y sale vacío para quien no se
+    contrarresta con un objeto (Don Ramón se va con el Sr. Barriga y a Doña
+    Florinda la empuja el audio). Sirve para saber si el jugador tiene con
+    qué responderle: ver dominio/animatronicos/enfrentamiento.py.
+    """
+    return tuple(
+        id_objeto for id_objeto, objeto in CATALOGO.items()
+        if nombre in objeto.elimina
+    )
 
 
 class ObjetosEnElSuelo:

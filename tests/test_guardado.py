@@ -5,6 +5,8 @@ Estas pruebas no escriben en disco: trabajan sobre los constructores, que son
 donde vive el saneado.
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from vecindad.config.audio import (
@@ -13,7 +15,13 @@ from vecindad.config.audio import (
     VOLUMEN_MUSICA_POR_DEFECTO,
 )
 from vecindad.config.partida import NOCHES_HISTORIA, ULTIMA_NOCHE
-from vecindad.config.ventana import RESOLUCION_BASE, RESOLUCIONES_DISPONIBLES
+from vecindad.config.ventana import (
+    BRILLO_MAXIMO,
+    BRILLO_MINIMO,
+    BRILLO_POR_DEFECTO,
+    RESOLUCION_BASE,
+    RESOLUCIONES_DISPONIBLES,
+)
 from vecindad.i18n import IDIOMA_POR_DEFECTO
 from vecindad.infraestructura.guardado import Configuracion, ProgresoJugador
 
@@ -50,6 +58,59 @@ class TestProgreso:
         assert not progreso.registrar_noche_completada(2)
         assert progreso.noches_completadas == 3
 
+    def test_haber_superado_noches_implica_haber_empezado(self):
+        """Los guardados viejos no traen el dato, pero si hay noches
+        superadas es evidente que la partida existe."""
+        assert ProgresoJugador(noches_completadas=3).hay_partida_guardada
+
+    def test_sin_haber_empezado_nunca_no_hay_nada_que_continuar(self):
+        assert not ProgresoJugador().hay_partida_guardada
+
+
+class TestEmpezarDeCero:
+    """Nuevo Juego borra el avance: es la regla que evita que Continuar siga
+    apuntando a la noche 3 de la partida anterior."""
+
+    @pytest.fixture
+    def avanzado(self):
+        """Un progreso con la campaña entera hecha, sin tocar el disco."""
+        progreso = ProgresoJugador(noches_completadas=ULTIMA_NOCHE)
+        with patch.object(ProgresoJugador, "guardar", return_value=True):
+            yield progreso
+
+    def test_borra_las_noches_superadas(self, avanzado):
+        avanzado.empezar_de_cero()
+        assert avanzado.noches_completadas == 0
+
+    def test_continuar_vuelve_a_ofrecer_la_noche_uno(self, avanzado):
+        avanzado.empezar_de_cero()
+        assert avanzado.proxima_noche == 1
+
+    def test_sigue_habiendo_partida_que_continuar(self, avanzado):
+        """Aunque no haya ninguna noche superada todavía: la partida existe
+        desde que se empieza, no desde que se gana algo."""
+        avanzado.empezar_de_cero()
+        assert avanzado.hay_partida_guardada
+
+    def test_vuelve_a_cerrar_la_noche_seis_y_la_personalizada(self, avanzado):
+        avanzado.empezar_de_cero()
+        assert not avanzado.noche_extra_desbloqueada
+        assert not avanzado.noche_personalizada_desbloqueada
+
+    def test_se_persiste_al_momento(self):
+        """Si no se guardara aquí, salir a mitad de la primera noche dejaría
+        el avance viejo intacto en disco."""
+        progreso = ProgresoJugador(noches_completadas=3)
+        with patch.object(ProgresoJugador, "guardar", return_value=True) as guardar:
+            progreso.empezar_de_cero()
+        assert guardar.called
+
+    def test_ganar_una_noche_vuelve_a_subir_el_contador(self, avanzado):
+        """Y de ahí en adelante Continuar avanza como siempre."""
+        avanzado.empezar_de_cero()
+        assert avanzado.registrar_noche_completada(1)
+        assert avanzado.proxima_noche == 2
+
 
 class TestConfiguracion:
     def test_los_valores_por_defecto_son_validos(self):
@@ -80,3 +141,19 @@ class TestConfiguracion:
 
     def test_un_volumen_que_no_es_numero_cae_al_por_defecto(self):
         assert Configuracion(volumen_musica="alto").volumen_musica == VOLUMEN_MUSICA_POR_DEFECTO
+
+    def test_el_brillo_arranca_neutro(self):
+        assert Configuracion().brillo == BRILLO_POR_DEFECTO
+
+    @pytest.mark.parametrize(
+        "guardado,esperado",
+        [(10, BRILLO_MINIMO), (500, BRILLO_MAXIMO), (120, 120)],
+    )
+    def test_un_brillo_fuera_de_rango_se_recorta(self, guardado, esperado):
+        """Sin recorte, un archivo tocado a mano podía dejar la pantalla
+        completamente negra o lavada, y sin manera de arreglarlo desde el
+        propio juego."""
+        assert Configuracion(brillo=guardado).brillo == esperado
+
+    def test_un_brillo_que_no_es_numero_cae_al_por_defecto(self):
+        assert Configuracion(brillo="claro").brillo == BRILLO_POR_DEFECTO

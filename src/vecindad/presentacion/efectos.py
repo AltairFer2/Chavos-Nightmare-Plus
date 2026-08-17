@@ -1,12 +1,19 @@
-"""Efectos visuales reutilizables: ruido de estática y líneas de barrido.
+"""Efectos visuales reutilizables: ruido de estática, líneas de barrido y
+confeti.
 
-Los dos se precalculan al iniciar y después solo se blitean, así el coste de
-trabajar píxel a píxel ocurre una sola vez y no en cada fotograma. Los usan
-tanto el menú principal como el panel de cámaras.
+La estática y las líneas de barrido se precalculan al iniciar y después solo
+se blitean, así el coste de trabajar píxel a píxel ocurre una sola vez y no
+en cada fotograma. Los usa tanto el menú principal como el panel de cámaras.
+
+El confeti es distinto: son pocas partículas y baratas de dibujar (un
+segmento de línea cada una), así que se actualizan y redibujan fotograma a
+fotograma en vez de precalcularse. Lo usa el menú de noche superada.
 """
 
+import math
 import random
-from typing import List, Tuple
+from dataclasses import dataclass
+from typing import List, Sequence, Tuple
 
 import pygame
 
@@ -50,3 +57,65 @@ def crear_lineas_barrido(tamano: Tuple[int, int], separacion: int,
     for y in range(0, alto, separacion):
         pygame.draw.line(lineas, (0, 0, 0, opacidad), (0, y), (ancho, y))
     return lineas
+
+
+@dataclass
+class Confeti:
+    """Una tira de serpentina cayendo: un segmento de línea que gira sobre su
+    propio centro mientras se balancea de lado a lado."""
+
+    x: float
+    y: float
+    largo: float
+    angulo: float
+    velocidad_angular: float
+    velocidad_caida: float
+    fase_balanceo: float
+    color: Tuple[int, int, int]
+
+
+def generar_confeti(
+    cantidad: int, ancho: int, alto: int, colores: Sequence[Tuple[int, int, int]],
+    largo_minimo: int, largo_maximo: int,
+    caida_minima: float, caida_maxima: float, giro_maximo: float,
+) -> List[Confeti]:
+    """Reparte las tiras por encima de la pantalla (y por dentro también, ya
+    a distintas alturas) para que no arranquen todas alineadas arriba."""
+    return [
+        Confeti(
+            x=random.uniform(0, ancho),
+            y=random.uniform(-alto, alto),
+            largo=random.uniform(largo_minimo, largo_maximo),
+            angulo=random.uniform(0, 360),
+            velocidad_angular=random.uniform(-giro_maximo, giro_maximo),
+            velocidad_caida=random.uniform(caida_minima, caida_maxima),
+            fase_balanceo=random.uniform(0, math.tau),
+            color=random.choice(colores),
+        )
+        for _ in range(cantidad)
+    ]
+
+
+def actualizar_confeti(
+    particulas: Sequence[Confeti], dt: float, ancho: int, alto: int, amplitud_balanceo: float,
+):
+    """Cae, gira y se balancea; al salir por abajo vuelve a aparecer arriba,
+    así el número de tiras en pantalla no cambia con el tiempo."""
+    for particula in particulas:
+        particula.fase_balanceo += dt * 2.0
+        particula.x += math.sin(particula.fase_balanceo) * amplitud_balanceo * dt
+        particula.y += particula.velocidad_caida * dt
+        particula.angulo += particula.velocidad_angular * dt
+        if particula.y - particula.largo > alto:
+            particula.y = -particula.largo
+            particula.x = random.uniform(0, ancho)
+
+
+def dibujar_confeti(superficie: pygame.Surface, particulas: Sequence[Confeti], grosor: int):
+    for particula in particulas:
+        radianes = math.radians(particula.angulo)
+        mitad_x = math.cos(radianes) * particula.largo / 2
+        mitad_y = math.sin(radianes) * particula.largo / 2
+        inicio = (particula.x - mitad_x, particula.y - mitad_y)
+        fin = (particula.x + mitad_x, particula.y + mitad_y)
+        pygame.draw.line(superficie, particula.color, inicio, fin, grosor)

@@ -29,6 +29,7 @@ FUENTE_TAMANO_MENU = 34
 FUENTE_TAMANO_TEXTO = 24
 FUENTE_TAMANO_HUD = 18
 FUENTE_TAMANO_CAMARA = 14
+FUENTE_TAMANO_RELOJ = 110
 
 # --- Figuras de los animatrónicos ---
 # Alto al que se dibuja un personaje, en píxeles del lienzo base. Delante del
@@ -156,3 +157,24 @@ CAMARA_AUDIO_MARGEN_INFERIOR = 56
 # última imagen de la partida, oscurecida con esta capa en vez de con una
 # imagen de fondo.
 PAUSA_OVERLAY_OPACIDAD = 190  # 0-255: qué tan oscura queda la partida detrás
+
+# --- Menú de noche superada (serpentina) ---
+# Tiras de colores cayendo, generadas por código (no hay asset para esto).
+# Cada una es un segmento de línea que gira mientras cae y se balancea de
+# lado a lado; al salir por abajo reaparece arriba, así que la cantidad de
+# tiras en pantalla se mantiene constante durante todo el menú.
+CONFETI_CANTIDAD = 70
+CONFETI_LARGO_MINIMO = 10
+CONFETI_LARGO_MAXIMO = 22
+CONFETI_GROSOR = 4
+CONFETI_CAIDA_MINIMA = 60   # píxeles por segundo
+CONFETI_CAIDA_MAXIMA = 140
+CONFETI_GIRO_MAXIMO = 120   # grados por segundo, en cualquier sentido
+CONFETI_BALANCEO_AMPLITUD = 30  # píxeles que se desplaza de lado a lado
+CONFETI_COLORES = (
+    (230, 200, 60),   # amarillo aviso, el mismo tono que ya usa la interfaz
+    (200, 60, 60),
+    (80, 200, 120),   # verde energía, el mismo tono que "sobreviviste"
+    (90, 150, 230),
+    (230, 230, 230),
+)

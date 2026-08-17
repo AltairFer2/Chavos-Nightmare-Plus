@@ -2,10 +2,12 @@
 
 A diferencia del menú principal, no tiene fondo propio: se dibuja encima de
 la última imagen de la partida (que la capa de aplicación deja de actualizar
-mientras está abierto), oscurecida con una capa translúcida. Solo ofrece
-reanudar, ajustar el sonido y volver al menú principal; el resto de los
-ajustes (idioma, resolución, pantalla completa, modo streamer) siguen
-viviendo únicamente en el menú principal.
+mientras está abierto), oscurecida con una capa translúcida.
+
+Ofrece reanudar, volver al menú principal y la misma pantalla de Ajustes que
+el menú de inicio: idioma, pantalla completa, resolución, brillo, volúmenes y
+modo streamer. Antes solo dejaba tocar el sonido, y para corregir el tamaño
+de la ventana o el brillo había que abandonar la noche.
 """
 
 from enum import Enum, auto
@@ -13,7 +15,6 @@ from typing import List, Optional
 
 import pygame
 
-from ...config.audio import VOLUMEN_MAXIMO, VOLUMEN_MINIMO, VOLUMEN_PASO
 from ...config.interfaz import (
     COLOR_AMARILLO_AVISO,
     COLOR_GRIS,
@@ -30,7 +31,8 @@ from ...config.interfaz import (
 )
 from ...config.ventana import ALTO_PANTALLA, ANCHO_PANTALLA, RESOLUCION_BASE
 from ...infraestructura.fuentes import crear_fuente
-from .deslizador import dibujar_deslizador, rect_deslizador, volumen_en
+from .ajustes import ControlAjustes
+from .deslizador import ANCHO_FILA_DESLIZABLE, dibujar_deslizador
 from .modelo import EntradaMenu
 
 TECLAS_ARRIBA = (pygame.K_UP, pygame.K_w)
@@ -46,16 +48,17 @@ SOLICITUD_MENU_PRINCIPAL = "menu_principal"
 
 class SeccionPausa(Enum):
     PRINCIPAL = auto()
-    SONIDO = auto()
+    AJUSTES = auto()
 
 
 class MenuPausa:
-    """Reanudar, ajustar el sonido o volver al menú principal."""
+    """Reanudar, tocar los ajustes o volver al menú principal."""
 
-    def __init__(self, idiomas, configuracion, audio):
+    def __init__(self, idiomas, configuracion, audio, pantalla):
         self.idiomas = idiomas
         self.configuracion = configuracion
         self.audio = audio
+        self.ajustes = ControlAjustes(idiomas, configuracion, audio, pantalla)
 
         self.seccion = SeccionPausa.PRINCIPAL
         self.indice_seleccionado = 0
@@ -64,7 +67,7 @@ class MenuPausa:
 
     def abrir(self):
         """Vuelve siempre a la pantalla principal de la pausa, para no
-        dejarla abierta en Sonido de la última vez que se usó."""
+        dejarla abierta en Ajustes de la última vez que se usó."""
         self.seccion = SeccionPausa.PRINCIPAL
         self.indice_seleccionado = 0
         self._deslizador_activo = None
@@ -74,15 +77,11 @@ class MenuPausa:
     # Entradas de la sección activa
     # ------------------------------------------------------------------
     def _entradas_actuales(self) -> List[EntradaMenu]:
-        if self.seccion is SeccionPausa.SONIDO:
-            return [
-                EntradaMenu("volumen_musica", self.idiomas.t("ajustes_volumen_musica")),
-                EntradaMenu("volumen_efectos", self.idiomas.t("ajustes_volumen_efectos")),
-                EntradaMenu("volver", self.idiomas.t("ajustes_volver")),
-            ]
+        if self.seccion is SeccionPausa.AJUSTES:
+            return self.ajustes.entradas()
         return [
             EntradaMenu("reanudar", self.idiomas.t("pausa_reanudar")),
-            EntradaMenu("sonido", self.idiomas.t("pausa_sonido")),
+            EntradaMenu("ajustes", self.idiomas.t("menu_ajustes")),
             EntradaMenu("menu_principal", self.idiomas.t("pausa_menu_principal")),
         ]
 
@@ -156,66 +155,31 @@ class MenuPausa:
     def _activar(self, entrada: EntradaMenu):
         if entrada.clave == "reanudar":
             self.solicitud = SOLICITUD_REANUDAR
-        elif entrada.clave == "sonido":
-            self._ir_a_seccion(SeccionPausa.SONIDO)
+        elif entrada.clave == "ajustes":
+            self._ir_a_seccion(SeccionPausa.AJUSTES)
         elif entrada.clave == "menu_principal":
             self.solicitud = SOLICITUD_MENU_PRINCIPAL
         elif entrada.clave == "volver":
             self._ir_a_seccion(SeccionPausa.PRINCIPAL)
         else:
-            # Las barras de volumen también se activan con ENTER o con clic:
+            # Las filas con valor también se activan con ENTER o con clic:
             # avanzan al siguiente valor, dando la vuelta.
             self._ajustar_valor(entrada, 1, ciclico=True)
 
     def _ajustar_valor(self, entrada: EntradaMenu, delta: int, ciclico: bool = False):
-        if entrada.clave == "volumen_musica":
-            self.configuracion.volumen_musica = self._nuevo_volumen(
-                self.configuracion.volumen_musica, delta, ciclico
-            )
-            self.audio.establecer_volumen_musica(self.configuracion.volumen_musica)
-            self.configuracion.guardar()
-        elif entrada.clave == "volumen_efectos":
-            self.configuracion.volumen_efectos = self._nuevo_volumen(
-                self.configuracion.volumen_efectos, delta, ciclico
-            )
-            self.audio.establecer_volumen_efectos(self.configuracion.volumen_efectos)
-            self.configuracion.guardar()
-
-    @staticmethod
-    def _nuevo_volumen(actual: int, delta: int, ciclico: bool) -> int:
-        nuevo = actual + delta * VOLUMEN_PASO
-        if ciclico and nuevo > VOLUMEN_MAXIMO:
-            return VOLUMEN_MINIMO
-        return max(VOLUMEN_MINIMO, min(VOLUMEN_MAXIMO, nuevo))
+        self.ajustes.ajustar(entrada, delta, ciclico)
 
     # ------------------------------------------------------------------
     # Barras deslizantes de volumen (misma geometría que en Ajustes)
     # ------------------------------------------------------------------
     def _deslizador_en_posicion(self, posicion, entradas: List[EntradaMenu]) -> Optional[str]:
-        for indice, entrada in enumerate(entradas):
-            if entrada.es_deslizable and rect_deslizador(indice).collidepoint(posicion):
-                return entrada.clave
-        return None
+        return self.ajustes.deslizador_en(posicion, entradas)
 
     def _valor_deslizador(self, clave: str) -> int:
-        if clave == "volumen_musica":
-            return self.configuracion.volumen_musica
-        if clave == "volumen_efectos":
-            return self.configuracion.volumen_efectos
-        return 0
+        return self.ajustes.valor_deslizador(clave)
 
     def _fijar_valor_deslizador(self, clave: str, x_pixel: int):
-        entradas = self._entradas_actuales()
-        indices = [indice for indice, e in enumerate(entradas) if e.clave == clave]
-        if not indices:
-            return
-        valor = volumen_en(rect_deslizador(indices[0]), x_pixel)
-        if clave == "volumen_musica":
-            self.configuracion.volumen_musica = valor
-            self.audio.establecer_volumen_musica(valor)
-        elif clave == "volumen_efectos":
-            self.configuracion.volumen_efectos = valor
-            self.audio.establecer_volumen_efectos(valor)
+        self.ajustes.fijar_deslizador(clave, self._entradas_actuales(), x_pixel)
 
     # ------------------------------------------------------------------
     # Navegación
@@ -242,12 +206,19 @@ class MenuPausa:
 
     @staticmethod
     def _calcular_rects(entradas: List[EntradaMenu]) -> List[pygame.Rect]:
+        """Las filas con barra se ensanchan hasta cubrirla, igual que en el
+        menú principal, para que el cursor no las pierda al pasar del texto a
+        la barra."""
         fuente = crear_fuente(FUENTE_TAMANO_MENU)
         rects = []
         for indice, entrada in enumerate(entradas):
-            ancho = max(
-                fuente.size(entrada.texto)[0], fuente.size(entrada.texto_resaltado)[0]
-            )
+            if entrada.es_deslizable:
+                ancho = ANCHO_FILA_DESLIZABLE
+            else:
+                ancho = max(
+                    fuente.size(entrada.texto)[0],
+                    fuente.size(entrada.texto_resaltado)[0],
+                )
             rects.append(
                 pygame.Rect(
                     MENU_MARGEN_IZQUIERDO,
@@ -276,7 +247,9 @@ class MenuPausa:
         superficie.blit(capa, (0, 0))
 
     def _dibujar_titulo(self, superficie: pygame.Surface):
-        clave = "pausa_sonido" if self.seccion is SeccionPausa.SONIDO else "pausa_titulo"
+        clave = (
+            "ajustes_titulo" if self.seccion is SeccionPausa.AJUSTES else "pausa_titulo"
+        )
         fuente = crear_fuente(FUENTE_TAMANO_TITULO, negrita=True)
         texto = fuente.render(self.idiomas.t(clave), True, COLOR_AMARILLO_AVISO)
         superficie.blit(texto, (MENU_MARGEN_IZQUIERDO, MENU_TITULO_Y))

@@ -33,6 +33,10 @@ class SolicitudNoche:
     numero: int
     personalizada: bool = False
     niveles_ia: Dict[str, int] = field(default_factory=dict)
+    # Solo la enciende "Nuevo Juego". Es lo que decide si antes de la noche
+    # se muestra el recorte del periódico: continuar una partida o repetir
+    # una noche suelta no vuelve a contar de dónde salió el trabajo.
+    nueva_partida: bool = False
 
 
 @dataclass

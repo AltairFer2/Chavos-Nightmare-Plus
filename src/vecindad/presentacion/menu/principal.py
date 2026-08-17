@@ -13,7 +13,6 @@ from typing import List, Optional
 
 import pygame
 
-from ...config.audio import VOLUMEN_MAXIMO, VOLUMEN_MINIMO, VOLUMEN_PASO
 from ...config.interfaz import (
     COLOR_AMARILLO_AVISO,
     COLOR_NEGRO,
@@ -34,12 +33,8 @@ from ...config.ventana import TITULO_JUEGO
 from ...dominio.animatronicos import niveles_iniciales_personalizada
 from ...infraestructura.fuentes import crear_fuente
 from . import secciones
-from .deslizador import (
-    ANCHO_FILA_DESLIZABLE,
-    dibujar_deslizador,
-    rect_deslizador,
-    volumen_en,
-)
+from .ajustes import ControlAjustes
+from .deslizador import ANCHO_FILA_DESLIZABLE, dibujar_deslizador
 from .fondo import FondoMenu, TituloMenu
 from .modelo import EntradaMenu, SeccionMenu, SolicitudNoche
 
@@ -59,6 +54,7 @@ class MenuPrincipal:
         self.configuracion = configuracion
         self.audio = audio
         self.pantalla = pantalla
+        self.ajustes = ControlAjustes(idiomas, configuracion, audio, pantalla)
 
         self.seccion = SeccionMenu.PRINCIPAL
         self.indice_seleccionado = 0
@@ -86,9 +82,7 @@ class MenuPrincipal:
     # ------------------------------------------------------------------
     def _entradas_actuales(self) -> List[EntradaMenu]:
         if self.seccion is SeccionMenu.AJUSTES:
-            return secciones.entradas_ajustes(
-                self.idiomas, self.configuracion, self.pantalla
-            )
+            return self.ajustes.entradas()
         if self.seccion is SeccionMenu.PERSONALIZADA:
             return secciones.entradas_personalizada(
                 self.idiomas, self.niveles_personalizados
@@ -167,7 +161,7 @@ class MenuPrincipal:
             return
 
         if entrada.clave == "nuevo_juego":
-            self.solicitud = SolicitudNoche(numero=1)
+            self.solicitud = SolicitudNoche(numero=1, nueva_partida=True)
         elif entrada.clave == "continuar":
             self.solicitud = SolicitudNoche(numero=self.progreso.proxima_noche)
         elif entrada.clave == "noche_6":
@@ -191,29 +185,12 @@ class MenuPrincipal:
 
     def _ajustar_valor(self, entrada: EntradaMenu, delta: int, ciclico: bool = False):
         """Aplica las flechas izquierda/derecha sobre las opciones que tienen
-        un valor asociado (idioma, resolución, volúmenes, modo streamer y
-        niveles de IA de la noche personalizada)."""
-        if entrada.clave == "idioma":
-            self._cambiar_idioma()
-        elif entrada.clave == "pantalla_completa":
-            self._alternar_pantalla_completa()
-        elif entrada.clave == "resolucion":
-            self._cambiar_resolucion(delta)
-        elif entrada.clave == "volumen_musica":
-            self.configuracion.volumen_musica = self._nuevo_volumen(
-                self.configuracion.volumen_musica, delta, ciclico
-            )
-            self.audio.establecer_volumen_musica(self.configuracion.volumen_musica)
-            self.configuracion.guardar()
-        elif entrada.clave == "volumen_efectos":
-            self.configuracion.volumen_efectos = self._nuevo_volumen(
-                self.configuracion.volumen_efectos, delta, ciclico
-            )
-            self.audio.establecer_volumen_efectos(self.configuracion.volumen_efectos)
-            self.configuracion.guardar()
-        elif entrada.clave == "modo_streamer":
-            self._alternar_modo_streamer()
-        elif entrada.nombre_personaje:
+        un valor asociado. Las de Ajustes las resuelve ControlAjustes, que es
+        el mismo que usa el menú de pausa; aquí solo quedan los niveles de IA
+        de la Noche Personalizada."""
+        if self.ajustes.ajustar(entrada, delta, ciclico):
+            return
+        if entrada.nombre_personaje:
             self._ajustar_nivel_ia(entrada.nombre_personaje, delta, ciclico)
 
     def _ajustar_nivel_ia(self, nombre: str, delta: int, ciclico: bool):
@@ -224,62 +201,17 @@ class MenuPrincipal:
             NIVEL_IA_MINIMO, min(NIVEL_IA_MAXIMO, nivel)
         )
 
-    @staticmethod
-    def _nuevo_volumen(actual: int, delta: int, ciclico: bool) -> int:
-        nuevo = actual + delta * VOLUMEN_PASO
-        if ciclico and nuevo > VOLUMEN_MAXIMO:
-            return VOLUMEN_MINIMO
-        return max(VOLUMEN_MINIMO, min(VOLUMEN_MAXIMO, nuevo))
-
-    def _cambiar_idioma(self):
-        self.configuracion.idioma = self.idiomas.siguiente_idioma()
-        self.configuracion.guardar()
-
-    def _cambiar_resolucion(self, delta: int):
-        self.configuracion.resolucion = self.pantalla.siguiente_resolucion(delta or 1)
-        self.configuracion.guardar()
-
-    def _alternar_pantalla_completa(self):
-        self.pantalla.alternar_pantalla_completa()
-        self.configuracion.pantalla_completa = self.pantalla.pantalla_completa
-        self.configuracion.guardar()
-
-    def _alternar_modo_streamer(self):
-        self.configuracion.modo_streamer = not self.configuracion.modo_streamer
-        self.configuracion.guardar()
-        self.audio.aplicar_modo_streamer(self.configuracion.modo_streamer)
-
     # ------------------------------------------------------------------
     # Barras deslizantes de volumen
     # ------------------------------------------------------------------
     def _deslizador_en_posicion(self, posicion, entradas: List[EntradaMenu]) -> Optional[str]:
-        for indice, entrada in enumerate(entradas):
-            if entrada.es_deslizable and rect_deslizador(indice).collidepoint(posicion):
-                return entrada.clave
-        return None
+        return self.ajustes.deslizador_en(posicion, entradas)
 
     def _valor_deslizador(self, clave: str) -> int:
-        if clave == "volumen_musica":
-            return self.configuracion.volumen_musica
-        if clave == "volumen_efectos":
-            return self.configuracion.volumen_efectos
-        return 0
+        return self.ajustes.valor_deslizador(clave)
 
     def _fijar_valor_deslizador(self, clave: str, x_pixel: int):
-        """Traduce la posición X del cursor (o del arrastre) dentro de la
-        barra a un volumen 0-100."""
-        entradas = self._entradas_actuales()
-        indices = [indice for indice, e in enumerate(entradas) if e.clave == clave]
-        if not indices:
-            return
-        valor = volumen_en(rect_deslizador(indices[0]), x_pixel)
-
-        if clave == "volumen_musica":
-            self.configuracion.volumen_musica = valor
-            self.audio.establecer_volumen_musica(valor)
-        elif clave == "volumen_efectos":
-            self.configuracion.volumen_efectos = valor
-            self.audio.establecer_volumen_efectos(valor)
+        self.ajustes.fijar_deslizador(clave, self._entradas_actuales(), x_pixel)
 
     # ------------------------------------------------------------------
     # Navegación

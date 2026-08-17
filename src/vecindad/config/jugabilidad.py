@@ -34,12 +34,19 @@ ALTURA_TORSO = ALTO_ANIMATRONIC_VISTA // 2
 BATERIAS_INICIALES_EN_BARRIL = 2
 NOCHE_SIN_BATERIAS_FIJAS = 4
 
-# Cada cuánto se revisa si aparece un objeto nuevo en un sitio vacío
-# (Entrada o Lavaderos) y con qué probabilidad aparece. La probabilidad baja
-# una vez que desaparecen las baterías fijas del barril.
-OBJETO_INTERVALO_APARICION_SEGUNDOS = 20.0
-OBJETO_PROBABILIDAD_BASE = 0.55
-OBJETO_PROBABILIDAD_MINIMA = 0.15
+# Cada cuánto se revisa si aparece un objeto nuevo en el sitio vacío y con
+# qué probabilidad aparece. La probabilidad baja una vez que desaparecen las
+# baterías fijas del barril.
+#
+# El ritmo se acortó al quedar los Lavaderos como único sitio donde se busca:
+# antes había dos (contando la Entrada), así que con los mismos números el
+# jugador recibía la mitad de objetos que cuando se calibraron. La espera
+# media entre objetos es intervalo / probabilidad: ~9 s la primera noche y
+# ~13 s la sexta, contando además que hay que ir hasta allá, alumbrar el
+# suelo y recogerlo.
+OBJETO_INTERVALO_APARICION_SEGUNDOS = 8.0
+OBJETO_PROBABILIDAD_BASE = 0.85
+OBJETO_PROBABILIDAD_MINIMA = 0.45
 OBJETO_REDUCCION_POR_NOCHE = 0.08
 
 # El churrumino arrojado solo entretiene a El Chavo este rato, en vez de

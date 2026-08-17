@@ -14,12 +14,17 @@ sola a la vez:
    sobre todo para igualar recorridos de largos muy distintos.
 3. Cuántos personajes salen esa noche, que va de 3 a 7.
 
-Con estos valores, las veces que el jugador tiene que reaccionar en una
-noche entera quedan así:
+Con estos valores, y con la noche durando 480 s, las veces que el jugador
+tiene que reaccionar en una noche entera quedan así:
 
-    Noche 1:  1,9 llegadas (una cada ~190 s)   Noche 4: 11,1 (cada ~49 s)
-    Noche 2:  4,4 llegadas (una cada ~122 s)   Noche 5: 17,3 (cada ~31 s)
-    Noche 3:  6,6 llegadas (una cada  ~82 s)   Noche 6: 26,3 (cada ~20 s)
+    Noche 1:  1,8 llegadas (una cada ~267 s)   Noche 4: 11,0 (cada ~44 s)
+    Noche 2:  4,3 llegadas (una cada ~112 s)   Noche 5: 14,7 (cada ~33 s)
+    Noche 3:  6,4 llegadas (una cada  ~75 s)   Noche 6: 23,0 (cada ~21 s)
+
+La duración de la noche es una cuarta palanca escondida: acortarla quita
+rondas de movimiento y baja la curva entera. Al pasar de 540 a 480 s hubo que
+subir a La Chilindrina, que era la que se quedaba sin tiempo para completar
+su vuelta.
 
 Esa curva no se calcula: se mide simulando noches completas, porque con
 recorridos en grafo la distancia hasta el jugador depende de por dónde salga
@@ -65,7 +70,7 @@ INTERVALO_POR_NOCHE: Dict[int, float] = {
 # Nivel de IA de cada personaje en cada noche de la campaña.
 #
 # No se lee como "quién da más miedo": el nivel compensa lo largo que sea el
-# recorrido. La Chilindrina va muy alta (11-13) porque su vuelta por las casas
+# recorrido. La Chilindrina va muy alta (12-13) porque su vuelta por las casas
 # le cuesta 13 movimientos de media, y Don Ramón muy bajo (3-6) porque se
 # planta en 3. Con el mismo nivel, ella no llegaría nunca y él llegaría sin
 # parar. Quien manda en la sensación de dificultad es el intervalo.
@@ -75,17 +80,17 @@ INTERVALO_POR_NOCHE: Dict[int, float] = {
 # cualquier cosa hay que volver a medir (tests/test_animatronicos.py, sección
 # "Medición del ritmo real de cada noche").
 NIVELES_POR_NOCHE: Dict[int, Dict[str, int]] = {
-    1: {nombres.DON_RAMON: 3, nombres.QUICO: 3, nombres.CHILINDRINA: 11},
+    1: {nombres.DON_RAMON: 3, nombres.QUICO: 3, nombres.CHILINDRINA: 12},
     2: {
-        nombres.DON_RAMON: 3, nombres.QUICO: 3, nombres.CHILINDRINA: 11,
+        nombres.DON_RAMON: 3, nombres.QUICO: 3, nombres.CHILINDRINA: 12,
         nombres.FLORINDA: 4,
     },
     3: {
-        nombres.DON_RAMON: 3, nombres.QUICO: 3, nombres.CHILINDRINA: 11,
+        nombres.DON_RAMON: 3, nombres.QUICO: 3, nombres.CHILINDRINA: 12,
         nombres.FLORINDA: 5, nombres.CLOTILDE: 6, nombres.CHAVO: 7,
     },
     4: {
-        nombres.DON_RAMON: 4, nombres.QUICO: 4, nombres.CHILINDRINA: 11,
+        nombres.DON_RAMON: 4, nombres.QUICO: 4, nombres.CHILINDRINA: 12,
         nombres.FLORINDA: 5, nombres.CLOTILDE: 7, nombres.CHAVO: 7,
         nombres.JAIMICO: 2,
     },

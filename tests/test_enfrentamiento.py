@@ -11,12 +11,15 @@ from vecindad.dominio.animatronicos import (
     acechando_en,
     detectar_luz_mortal,
     detectar_luz_que_descarga,
+    esta_en_tregua,
     iluminados_en,
     nombres,
     resolver_arrojo,
 )
+from vecindad.dominio.inventario import Inventario
 from vecindad.dominio.objetos import (
     ID_BALERO,
+    ID_CAFE,
     ID_CAFE_CHURRUMINO,
     ID_CHURRUMINO,
     ID_PALETA,
@@ -141,6 +144,104 @@ class TestQuicoSeVaConLaPelota:
         paleta es de La Chilindrina."""
         resultado = resolver_arrojo([quico_acechando], ID_PALETA, iluminados=set())
         assert resultado.eliminado is None
+        assert quico_acechando.esta_acechando()
+
+
+class TestLaTreguaDelPrincipio:
+    """A quien se quita con un objeto no se le corre el margen de ataque
+    hasta que el suelo le haya dado esa respuesta al jugador una primera vez.
+
+    Los objetos salen por sorteo, así que sin esta tregua la noche podía
+    matar por una mala racha del suelo y no por un error del jugador: verlo
+    delante, no tener nada que arrojarle y no poder hacer absolutamente nada.
+    Es un respiro de arranque, no un escudo permanente.
+    """
+
+    @pytest.fixture
+    def sin_nada(self):
+        return Inventario()
+
+    def test_quico_no_ataca_mientras_no_aparezca_la_pelota(self, quico_acechando, sin_nada):
+        assert esta_en_tregua(quico_acechando, sin_nada)
+        assert not quico_acechando.descontar_espera(999.0, en_tregua=True)
+
+    def test_con_la_pelota_encima_vuelve_a_ser_peligroso(self, quico_acechando, sin_nada):
+        sin_nada.guardar(ID_PELOTA_REDONDA)
+        assert not esta_en_tregua(quico_acechando, sin_nada)
+        assert quico_acechando.descontar_espera(999.0, en_tregua=False)
+
+    def test_le_sirve_cualquiera_de_sus_dos_pelotas(self, quico_acechando, sin_nada):
+        sin_nada.guardar(ID_PELOTA_CUADRADA)
+        assert not esta_en_tregua(quico_acechando, sin_nada)
+
+    def test_un_objeto_ajeno_no_le_quita_la_tregua(self, quico_acechando, sin_nada):
+        """Recoger la paleta no despierta a Quico: no es lo suyo."""
+        sin_nada.guardar(ID_PALETA)
+        assert esta_en_tregua(quico_acechando, sin_nada)
+
+    def test_gastar_su_pelota_con_otro_ya_no_devuelve_la_tregua(
+        self, quico_acechando, sin_nada
+    ):
+        """El caso que hay que castigar: tuvo la pelota y se la tiró a quien
+        no era. Se quedó sin nada, pero la respuesta existió y la desperdició,
+        así que Quico lo mata igual."""
+        sin_nada.guardar(ID_PELOTA_REDONDA)
+        sin_nada.gastar(ID_PELOTA_REDONDA)
+        assert not sin_nada.tiene(ID_PELOTA_REDONDA)
+        assert esta_en_tregua(quico_acechando, sin_nada) is False
+        assert quico_acechando.descontar_espera(999.0, en_tregua=False)
+
+    def test_encontrar_la_otra_pelota_le_devuelve_la_oportunidad(
+        self, quico_acechando, sin_nada
+    ):
+        """Sin tregua sigue siendo mortal, pero con un objeto nuevo el
+        jugador vuelve a tener con qué salvarse."""
+        sin_nada.guardar(ID_PELOTA_REDONDA)
+        sin_nada.gastar(ID_PELOTA_REDONDA)
+        sin_nada.guardar(ID_PELOTA_CUADRADA)
+        assert not esta_en_tregua(quico_acechando, sin_nada)
+        resultado = resolver_arrojo([quico_acechando], ID_PELOTA_CUADRADA, set())
+        assert resultado.eliminado is quico_acechando
+
+    @pytest.mark.parametrize("nombre", [nombres.DON_RAMON, nombres.FLORINDA])
+    def test_los_que_no_se_quitan_con_objetos_nunca_estan_en_tregua(self, nombre, sin_nada):
+        """Su respuesta está en el panel del barril (el Sr. Barriga y el
+        audio), que no depende de la suerte del suelo. Si la tregua los
+        alcanzara, serían inofensivos toda la noche."""
+        llegado = llevar_a_acechar(crear(nombre, nivel_ia=10))
+        assert not esta_en_tregua(llegado, sin_nada)
+
+    def test_a_jaimico_le_basta_con_que_pueda_preparar_el_cafe(self, sin_nada):
+        """Todavía no lo ha combinado, pero tiene los dos ingredientes: eso
+        ya es una respuesta, solo le falta pulsar la tecla."""
+        jaimico = llevar_a_acechar(crear(nombres.JAIMICO, nivel_ia=10))
+        assert esta_en_tregua(jaimico, sin_nada)
+        sin_nada.guardar(ID_CAFE)
+        sin_nada.guardar(ID_CHURRUMINO)
+        assert not esta_en_tregua(jaimico, sin_nada)
+
+    def test_a_clotilde_solo_le_vale_lo_que_pidio(self, sin_nada):
+        clotilde = llevar_a_acechar(crear(nombres.CLOTILDE, nivel_ia=10))
+        clotilde.objeto_pedido = ID_PALETA
+        sin_nada.guardar(ID_BALERO)
+        assert esta_en_tregua(clotilde, sin_nada)
+        sin_nada.guardar(ID_PALETA)
+        assert not esta_en_tregua(clotilde, sin_nada)
+
+    @pytest.mark.parametrize("config", ELENCO, ids=lambda c: c.nombre)
+    def test_con_el_suelo_entero_encima_nadie_queda_en_tregua(self, config):
+        """Con todo lo que da la noche en la mochila, la vecindad entera
+        vuelve a ser peligrosa."""
+        llegado = llevar_a_acechar(Animatronic(config, nivel_ia=10))
+        inventario = Inventario()
+        for id_objeto in OBJETOS_DEFENSIVOS:
+            inventario.guardar(id_objeto)
+        inventario.guardar(ID_CAFE)
+        assert not esta_en_tregua(llegado, inventario)
+
+    def test_la_tregua_no_lo_quita_de_delante(self, quico_acechando):
+        """Sigue ahí, mirando: lo que no puede es matar."""
+        quico_acechando.descontar_espera(999.0, en_tregua=True)
         assert quico_acechando.esta_acechando()
 
 

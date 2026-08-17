@@ -73,6 +73,7 @@ def entradas_ajustes(idiomas, configuracion, pantalla) -> List[EntradaMenu]:
             "resolucion",
             f"{idiomas.t('ajustes_resolucion')}: {ancho} x {alto}{sufijo_resolucion}",
         ),
+        EntradaMenu("brillo", f"{idiomas.t('ajustes_brillo')}: {pantalla.brillo}%"),
         EntradaMenu("volumen_musica", idiomas.t("ajustes_volumen_musica")),
         EntradaMenu("volumen_efectos", idiomas.t("ajustes_volumen_efectos")),
         EntradaMenu(

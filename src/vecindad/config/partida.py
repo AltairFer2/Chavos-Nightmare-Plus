@@ -3,7 +3,7 @@
 # --- Noche / temporizador ---
 HORA_INICIO_NOCHE = 0  # 12:00 am
 HORA_FIN_NOCHE = 6  # 6:00 am
-DURACION_NOCHE_SEGUNDOS = 540   # duración real de una noche completa (9 min)
+DURACION_NOCHE_SEGUNDOS = 480   # duración real de una noche completa (8 min)
 HORAS_DE_NOCHE = (HORA_FIN_NOCHE - HORA_INICIO_NOCHE) % 12 or 12
 SEGUNDOS_POR_HORA_NOCHE = DURACION_NOCHE_SEGUNDOS / HORAS_DE_NOCHE
 
@@ -17,6 +17,25 @@ SEGUNDOS_POR_HORA_NOCHE = DURACION_NOCHE_SEGUNDOS / HORAS_DE_NOCHE
 # intervalo a la mitad tiene el mismo efecto que duplicar el nivel de todos, y
 # eso se nota mucho más en las noches con el elenco completo.
 INTERVALO_MOVIMIENTO_POR_DEFECTO = 20.0
+
+# --- Reloj de "noche superada" ---
+# Al ganar la noche, antes de mostrar el menú de continuar/volver, se ve un
+# reloj que salta de las 5:59 a las 6:00 am y nada más en pantalla. No tiene
+# relación con el reloj real de la noche (hora_actual(), que solo cuenta
+# horas enteras): es una animación de cierre aparte, con su propio tiempo.
+RELOJ_VICTORIA_SEGUNDOS_5_59 = 1.2
+RELOJ_VICTORIA_SEGUNDOS_6_00 = 1.5
+
+# Antes de empezar a jugar hay dos pantallas sobre negro, las dos sin nada
+# que tocar (ver presentacion/inicio_noche.py):
+#
+# 1. El recorte de periódico con el anuncio del puesto de velador. Solo sale
+#    al empezar una partida nueva, y se queda el rato suficiente para poder
+#    leerlo entero sin prisa.
+# 2. La tarjeta de la noche: "Noche N" y las 12:00 am, como en el género.
+#    Esa sí sale antes de cada noche y hace de pantalla de transición.
+PERIODICO_SEGUNDOS = 20.0
+TARJETA_NOCHE_SEGUNDOS = 4.0
 
 # --- Progresión de noches ---
 NOCHES_HISTORIA = 5  # noches 1 a 5: campaña principal
