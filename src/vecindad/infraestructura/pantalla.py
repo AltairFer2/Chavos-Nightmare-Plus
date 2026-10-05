@@ -19,9 +19,13 @@ aplica el brillo elegido al volcar la imagen: es lo último que pasa antes de
 enseñar el fotograma, así que corrige la escena entera de una sola vez.
 """
 
+import ctypes
+import sys
+
 import pygame
 
 from ..config.interfaz import COLOR_NEGRO
+from ..config.rutas import ARCHIVO_ICONO
 from ..config.ventana import (
     ALTO_PANTALLA,
     ANCHO_PANTALLA,
@@ -30,6 +34,7 @@ from ..config.ventana import (
     BRILLO_NEUTRO,
     BRILLO_PASO,
     BRILLO_POR_DEFECTO,
+    ID_APLICACION_WINDOWS,
     RESOLUCION_BASE,
     RESOLUCIONES_DISPONIBLES,
     TITULO_JUEGO,
@@ -40,6 +45,10 @@ from ..config.ventana import (
 # tramo de arriba se aplica a media fuerza: con 255 la escena se lavaría
 # entera y el juego dejaría de dar miedo.
 SUMA_MAXIMA_BRILLO = 110
+
+# Lado al que se reduce el logo para usarlo de icono de la ventana. El
+# original es enorme y Windows no lo muestra más grande que esto.
+LADO_ICONO_VENTANA = 64
 
 
 class GestorPantalla:
@@ -61,8 +70,44 @@ class GestorPantalla:
         # Se guarda hecha para no crear una superficie por fotograma.
         self._capa_brillo = None
         self._mezcla_brillo = 0
+        # El icono va antes de abrir la ventana: en Windows es el que se
+        # queda en la barra de tareas.
+        self._identificarse_ante_windows()
+        self._poner_icono()
         self._aplicar_modo_video()
         pygame.display.set_caption(TITULO_JUEGO)
+
+    @staticmethod
+    def _identificarse_ante_windows():
+        """Le dice a Windows que esta ventana es una aplicación propia.
+
+        Corriendo desde el código, el proceso es python.exe, y Windows
+        agrupa la ventana en la barra de tareas bajo Python y le pone su
+        icono, aunque la ventana tenga el logo puesto. Con un identificador
+        propio la agrupa aparte y usa el icono de la ventana. Desde el .exe
+        no hace falta, pero tampoco estorba.
+
+        Fuera de Windows no existe esta llamada, y si falla el juego arranca
+        igual: lo único que se pierde es el icono de la barra de tareas."""
+        if sys.platform != "win32":
+            return
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(ID_APLICACION_WINDOWS)
+        except (AttributeError, OSError):
+            return
+
+    @staticmethod
+    def _poner_icono():
+        """Pone el logo como icono de la ventana. Si no está, se queda el de
+        pygame: no es motivo para no arrancar."""
+        if not ARCHIVO_ICONO.exists():
+            return
+        try:
+            logo = pygame.image.load(str(ARCHIVO_ICONO))
+        except pygame.error:
+            return
+        lado = (LADO_ICONO_VENTANA, LADO_ICONO_VENTANA)
+        pygame.display.set_icon(pygame.transform.smoothscale(logo, lado))
 
     @staticmethod
     def _validar(resolucion):

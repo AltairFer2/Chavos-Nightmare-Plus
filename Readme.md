@@ -18,9 +18,11 @@ cuenta atrás: hay unos segundos para reaccionar antes de que ataque.
 |---|---|
 | **Linterna** | Único recurso limitado de la noche. Ilumina un círculo alrededor del cursor; fuera de él no se ve nada. Las baterías de repuesto se buscan a oscuras. |
 | **Luz mortal** | A Don Ramón, Doña Florinda y La Chilindrina **no se les puede alumbrar de cerca**. Cuanto más alto su nivel, más lejos es fatal el haz. |
-| **Objetos** | Seis objetos defensivos, uno solo de cada por noche. Cada uno se lleva a un vecino concreto; gastar el equivocado deja sin respuesta al que sí lo necesitaba. |
+| **Objetos** | Seis objetos defensivos, además del café y la batería. Cada uno tiene su sitio fijo en los Lavaderos: la noche empieza con todos puestos y, al recogerlo, vuelve a su sitio tras un tiempo fijo (más largo cuanto más avanzada la campaña). No se lleva más de uno de cada a la vez. |
+| **Puntería** | El objeto se arroja hacia el cursor y solo sirve si le da al vecino que corresponde. Cuanto más alto su nivel, más fino hay que apuntar. Fallar o darle a quien no era lo gasta igual. |
 | **Café con churrumino** | Lo único que calma a Jaimico. Se prepara combinando café y churrumino, pero el churrumino suelto también entretiene a El Chavo: la decisión es del jugador. |
-| **Cámaras** | Solo se abren desde dentro del barril. Mirar a El Chavo demasiado rato seguido hace que arruine todas las cámaras. |
+| **Cámaras** | Solo se abren desde dentro del barril, y el monitor tarda un momento en bajar. Mirar a El Chavo demasiado rato seguido hace que arruine todas las cámaras. |
+| **Interferencia** | Si alguien se mueve justo mientras se le está mirando, esa cámara se cae unos segundos: se oye que se fue, pero no se ve hacia dónde. |
 | **Servicios del barril** | Llamar al Sr. Barriga (lo único que quita a Don Ramón, pero llamarlo sin necesidad es mortal), el audio de Quico, restablecer cámaras y restablecer todo. |
 | **Doña Clotilde** | Al llegar reclama uno de los seis objetos al azar. Si no se tiene, hay que salir a buscarlo. |
 
@@ -36,7 +38,7 @@ y la Noche Personalizada (nivel de IA 0-20 por personaje) al terminar la 6.
 | `W` / `↑` | Asomarse |
 | Clic | Encender y apagar la linterna |
 | `E` | Recoger el objeto que se tenga iluminado |
-| `1`-`7` | Arrojar el objeto de esa ranura |
+| `1`-`7` | Arrojar el objeto de esa ranura hacia el cursor |
 | `C` | Combinar café con churrumino |
 | `R` | Cambiar la batería de la linterna |
 | `ESPACIO` | Subir y bajar las cámaras (solo dentro del barril) |
@@ -84,9 +86,12 @@ capas siguen respetando sus dependencias.
 ## Generar el .exe
 
 ```bash
-pip install pyinstaller
+pip install pyinstaller pillow
 pyinstaller vecindad.spec
 ```
+
+Pillow hace falta para que PyInstaller convierta el logo de
+`assets/logo/` en el icono del .exe.
 
 El ejecutable queda en `dist/`. Los assets y sonidos se empaquetan dentro; el
 progreso y las preferencias del jugador se guardan aparte, en

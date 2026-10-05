@@ -42,6 +42,13 @@ ALTO_ANIMATRONIC_CAMARA = 320
 ICONO_OBJETO_SUELO = 64
 ICONO_OBJETO_HUD = 52
 
+# --- Objeto arrojado en vuelo ---
+# Sale de abajo al centro, que es donde está la mano del jugador, y sube en
+# arco hasta donde se apuntó. Se dibuja por encima de la penumbra: aunque se
+# arroje a oscuras, el jugador tiene que ver adónde fue a parar.
+ARROJO_ORIGEN = (ANCHO_PANTALLA // 2, ALTO_PANTALLA + ICONO_OBJETO_SUELO // 2)
+ARROJO_ALTURA_ARCO = 140
+
 # --- Distribución del menú ---
 MENU_MARGEN_IZQUIERDO = 120
 MENU_Y_PRIMERA_OPCION = 300
@@ -95,6 +102,25 @@ CAMARA_ESTATICA_CAMBIO_FRAMES = 4  # cada cuántos fotogramas se cambia de cuadr
 CAMARA_TRANSICION_SEGUNDOS = 0.3
 CAMARA_TRANSICION_OPACIDAD = 200
 
+# Lo que dura la animación de encender el monitor (los cuadros "pos N.png":
+# el aparato bajando del techo hasta quedar delante de la cara). Es tiempo en
+# el que el jugador no ve ni el patio ni las cámaras, así que se mantiene
+# corta a propósito: el efecto de sonido dura bastante más y sigue oyéndose
+# con la imagen ya puesta, como el zumbido del tubo al calentarse.
+CAMARA_ENCENDIDO_SEGUNDOS = 0.6
+
+# Bajarlo no repite la ráfaga entera al revés: se enseña un solo cuadro del
+# aparato ya despegado de la cara y desaparece. Volver al patio es lo que se
+# hace cuando algo va mal, y ahí no puede haber medio segundo de monitor
+# tapando la vista.
+CAMARA_SALIDA_SEGUNDOS = 0.12
+
+# Rato que las pestañas de abajo se quedan muertas después de bajar un panel.
+# El monitor se baja con el ratón justo encima de esa franja, así que sin esta
+# pausa el más leve movimiento vuelve a levantarlo antes de que al jugador le
+# dé tiempo a apartar la mano.
+TIRAS_BLOQUEO_SEGUNDOS = 0.5
+
 # Líneas de barrido del monitor.
 CAMARA_LINEAS_SEPARACION = 4
 CAMARA_LINEAS_OPACIDAD = 26
@@ -124,16 +150,116 @@ OSCURIDAD_DENTRO_BARRIL = 105
 LINTERNA_COLOR_LUZ = (96, 84, 58)
 
 # --- Susto final (jumpscare) ---
-# Al perder, si el personaje que atrapó al jugador tiene sus propios cuadros
-# "jump N.png" en assets/animatronics/<carpeta>/, se reproducen en secuencia
-# sobre el fondo de la posición donde estaba el jugador, antes de pasar a la
-# pantalla de game over. Los últimos dos cuadros (el acercamiento final) se
-# sostienen más tiempo que el resto para que se note el golpe. Estos dos
-# tiempos son el ritmo "natural"; si hay un efecto de sonido para el susto,
-# ambos se escalan para que la ráfaga completa dure lo mismo que el audio
-# (ver GestorAudio.duracion_efecto).
-SUSTO_SEGUNDOS_POR_FRAME = 0.05
-SUSTO_SEGUNDOS_FRAME_FINAL = 0.5
+# Al perder, el personaje que atrapó al jugador se le echa encima antes de la
+# pantalla de game over (ver presentacion/jumpscare.py). Dura lo mismo que el
+# efecto de sonido del susto; sin audio, SUSTO_DURACION_NATURAL.
+SUSTO_DURACION_NATURAL = 3.3
+# En qué punto de esa duración llega el golpe (el último cuadro). Antes, los
+# cuadros del acercamiento se aceleran; después, la cara se queda encima.
+SUSTO_PROPORCION_GOLPE = 0.53
+# Cuánto se acerca la cámara mientras viene, y el zoom de más con el que
+# entra el golpe antes de asentarse en SUSTO_ZOOM_REPOSO.
+SUSTO_ZOOM_ACERCAMIENTO = 0.12
+SUSTO_ZOOM_GOLPE = 0.22
+SUSTO_ZOOM_REPOSO = 1.18
+# Quien no tiene cuadros de susto propios se acerca con su sprite normal,
+# que arranca a este tamaño y crece hasta ocupar la pantalla. Del sprite se
+# usa solo esta parte de arriba de la figura (cabeza y pecho), para que el
+# golpe sea un primer plano de la cara y no el cuerpo entero.
+SUSTO_ZOOM_INICIAL_SIN_CUADROS = 0.55
+SUSTO_PROPORCION_CARA_SIN_CUADROS = 0.45
+# Temblor en píxeles: crece hasta el máximo del acercamiento, da un golpe
+# fuerte al llegar y se queda en un temblor de fondo.
+SUSTO_TEMBLOR_ACERCAMIENTO = 9
+SUSTO_TEMBLOR_GOLPE = 30
+SUSTO_TEMBLOR_FONDO = 4
+# Parpadeo de luz durante el acercamiento: con qué probabilidad se apaga en
+# cada fotograma y cuánto.
+SUSTO_PARPADEO_PROBABILIDAD = 0.18
+SUSTO_PARPADEO_OPACIDAD = (90, 170)
+# Destello blanco del golpe: corto, para no tapar la cara que llega.
+SUSTO_DESTELLO_OPACIDAD = 170
+SUSTO_DESTELLO_SEGUNDOS = 0.07
+SUSTO_VELO_COLOR = (170, 0, 0)
+SUSTO_VELO_OPACIDAD = 110
+# Estática: leve durante todo el susto, un golpe en el impacto y al final
+# tapa la imagen entera durante SUSTO_ESTATICA_CIERRE_SEGUNDOS.
+SUSTO_ESTATICA_FONDO = 12
+SUSTO_ESTATICA_GOLPE = 60
+SUSTO_ESTATICA_CIERRE_SEGUNDOS = 0.35
+# Oscurecimiento de los bordes (0-255 en las esquinas).
+SUSTO_VINETA_OPACIDAD = 150
+
+# Cómo se arma el susto de quien no sigue la regla por defecto, que es poner
+# todos sus "jump N.png" en orden y usar el último como golpe. Va por carpeta
+# de assets/animatronics/:
+#
+# - "acercamientos": de dónde sale el acercamiento; en cada muerte se sortea
+#   uno. Cada entrada es una hoja de propuesta (una cuadrícula de cuadros con
+#   separadores blancos o negros) con los cuadros que se usan, numerados de
+#   izquierda a derecha y de arriba abajo empezando en 1. La entrada
+#   ACERCAMIENTO_CON_JUMPS usa en cambio esos "jump N.png" sueltos.
+# - "golpes": qué "jump N.png" pueden ser el golpe final; sale uno al azar.
+#   None son todos los de la carpeta.
+# - "recortes" (opcional): píxeles que se le quitan a cada cuadro de una hoja
+#   por (izquierda, arriba, derecha, abajo), para tapar lo que no es arte.
+ACERCAMIENTO_CON_JUMPS = "jump"
+SUSTOS_COMPUESTOS = {
+    "florinda": {
+        "acercamientos": {
+            "propuesta 1.png": (1, 2, 3, 4, 5, 6, 7),
+            # El 6 la aleja otra vez (levanta el palo de lejos) y rompe el
+            # acercamiento, así que se salta.
+            "propuesta 2.png": (1, 2, 3, 4, 5, 7),
+        },
+        "golpes": None,
+    },
+    "chavo": {
+        "acercamientos": {
+            # Mismo caso que la propuesta 2 de Florinda: el 6 lo aleja.
+            "propuesta 1.png": (1, 2, 3, 4, 5, 7),
+        },
+        # Sus "jump" son una secuencia: del 1 al 4 todavía viene de lejos y
+        # el 9 y el 10 son el después. Para el golpe solo sirven los de
+        # encima.
+        "golpes": (5, 6, 7, 8),
+    },
+    "jaimico": {
+        "acercamientos": {
+            # El 9 es un grito aún más cerca que el golpe: se deja fuera
+            # para no restarle fuerza.
+            "propuesta 1.png": (1, 2, 3, 4, 5, 6, 7, 8),
+            # El 6 es cuando lanza la bolsa contra el jugador.
+            ACERCAMIENTO_CON_JUMPS: (1, 2, 3, 4, 5, 6),
+        },
+        # El 8 y el 9 son el después; el golpe es el grito del 7.
+        "golpes": (7,),
+        "recortes": {
+            # Cada cuadro de la hoja trae su número en un círculo arriba a la
+            # izquierda; quitando esa franja el número no sale en el susto.
+            "propuesta 1.png": (52, 0, 0, 0),
+        },
+    },
+    "bruja": {
+        "acercamientos": {
+            # Como en la de Jaimico, el 9 es más de cerca que el golpe.
+            "propuesta 1.png": (1, 2, 3, 4, 5, 6, 7, 8),
+            # El 6 la aleja otra vez (se abalanza desde más lejos).
+            ACERCAMIENTO_CON_JUMPS: (1, 2, 3, 4, 5),
+        },
+        # El 7 es la carcajada encima y el 8 el estallido rojo; el 9 es el
+        # después.
+        "golpes": (7, 8),
+        "recortes": {
+            # Cada cuadro trae un marco gris fino y su número escrito arriba
+            # a la izquierda.
+            "propuesta 1.png": (30, 4, 4, 4),
+        },
+    },
+}
+# Los cuadros de una propuesta son pequeños: se agrandan menos que los "jump"
+# verticales (SUSTO_ZOOM) para que no se vean tan borrosos.
+SUSTO_ZOOM_PROPUESTA = 1.2
 
 # Cuánto se agranda cada cuadro respecto a ajustarlo solo por el alto de
 # pantalla, para que ocupe más del escenario en vez de quedar como una tira

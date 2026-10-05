@@ -20,13 +20,42 @@ import pygame
 import pytest
 
 from vecindad.app.estados import EstadoJuego
+from vecindad.config.audio import (
+    EFECTO_ENCENDIDO_CAMARAS,
+    EFECTO_INTERFERENCIA,
+    EFECTO_PASOS_DERECHA,
+    EFECTO_PASOS_IZQUIERDA,
+    EFECTO_SORPRESA,
+)
+from vecindad.config.interfaz import (
+    CAMARA_ENCENDIDO_SEGUNDOS,
+    CAMARA_SALIDA_SEGUNDOS,
+    TIRAS_BLOQUEO_SEGUNDOS,
+)
 from vecindad.config.partida import (
     NOCHE_EXTRA,
     PERIODICO_SEGUNDOS,
     TARJETA_NOCHE_SEGUNDOS,
 )
+from vecindad.config.jugabilidad import (
+    ARROJO_DURACION_VUELO_SEGUNDOS,
+    CAMARA_INTERFERENCIA_MAXIMA_SEGUNDOS,
+    CAMARA_INTERFERENCIA_MINIMA_SEGUNDOS,
+    LINTERNA_BATERIAS_MAXIMAS,
+)
+from vecindad.config.ventana import ANCHO_PANTALLA
 from vecindad.dominio.animatronicos import ELENCO, nombres
-from vecindad.dominio.objetos import ID_PELOTA_REDONDA
+from vecindad.dominio.inventario import ORDEN_ARROJABLES
+from vecindad.dominio.objetos import (
+    ID_BALERO,
+    ID_BATERIA,
+    ID_CAFE_CHURRUMINO,
+    ID_PALETA,
+    ID_PELOTA_CUADRADA,
+    ID_PELOTA_REDONDA,
+    obtener_objeto,
+)
+from vecindad.presentacion.hud import RECT_TIRA_BAJAR, RECT_TIRA_CAMARAS
 from vecindad.presentacion.inicio_noche import HORA_DE_ARRANQUE
 from vecindad.mundo.posiciones import (
     POSICION_BARRIL,
@@ -164,51 +193,692 @@ def _sigue_jugando(juego) -> bool:
     return juego.gestor_estados.estado is EstadoJuego.JUGANDO
 
 
-class TestLaTreguaDelPrincipio:
-    """Quien se quita con un objeto no puede matar hasta que el suelo le haya
-    dado esa respuesta al jugador una primera vez. Después ya es cosa suya:
-    haberla malgastado no le devuelve la protección."""
+def _correr(juego, segundos: float):
+    for _ in range(int(segundos / FOTOGRAMA) + 1):
+        juego._actualizar(FOTOGRAMA)
 
-    def _correr(self, juego, segundos: float = 2.0):
-        for _ in range(int(segundos / FOTOGRAMA)):
+
+class TestYaNoHayTregua:
+    """Antes, quien se quitaba con un objeto no podía matar hasta que el
+    sorteo del suelo le diera al jugador la respuesta. Ya no hay sorteo:
+    cada objeto está en su sitio o a punto de volver, así que no tener con
+    qué responder es haberlo gastado mal."""
+
+    def test_quico_ataca_aunque_no_lleve_la_pelota(self, juego, plantar_delante):
+        plantar_delante(nombres.QUICO)
+        _correr(juego, 2.0)
+        assert not _sigue_jugando(juego)
+        assert juego.noche.derrota.nombre_atacante == nombres.QUICO
+
+
+class TestArrojarConPunteria:
+    """El objeto vuela adonde apunta el ratón y hace efecto al caer."""
+
+    @pytest.fixture
+    def apuntar(self, juego, monkeypatch):
+        def _apuntar(punto):
+            monkeypatch.setattr(juego.gestor_pantalla, "posicion_en_lienzo", lambda _: punto)
+            juego.punto_luz = punto
+
+        return _apuntar
+
+    @pytest.fixture
+    def quico_delante(self, juego, plantar_delante):
+        quico = plantar_delante(nombres.QUICO)
+        quico.segundos_para_atacar = MARGEN_INALCANZABLE
+        return quico
+
+    @staticmethod
+    def _arrojar(juego, id_objeto):
+        juego.inventario.guardar(id_objeto)
+        juego._arrojar(ORDEN_ARROJABLES.index(id_objeto))
+
+    def test_apuntarle_se_lo_lleva(self, juego, quico_delante, apuntar):
+        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
+        self._arrojar(juego, ID_PELOTA_REDONDA)
+        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
+        assert not quico_delante.esta_acechando()
+        assert juego.objeto_en_vuelo is None
+
+    def test_hace_efecto_al_caer_y_no_al_soltarlo(self, juego, quico_delante, apuntar):
+        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
+        self._arrojar(juego, ID_PELOTA_REDONDA)
+        juego._actualizar(FOTOGRAMA)
+        assert quico_delante.esta_acechando()
+        assert juego.objeto_en_vuelo is not None
+
+    def test_apuntar_lejos_falla_y_lo_gasta(self, juego, quico_delante, apuntar):
+        x, y = quico_delante.punto_torso_en(POSICION_BARRIL)
+        apuntar((x + quico_delante.semiejes_acierto()[0] + 50, y))
+        self._arrojar(juego, ID_PELOTA_REDONDA)
+        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
+        assert quico_delante.esta_acechando()
+        assert not juego.inventario.tiene(ID_PELOTA_REDONDA)
+        assert juego.aviso.texto == juego.idiomas.t(
+            "arrojo_fallado",
+            objeto=juego.idiomas.t(obtener_objeto(ID_PELOTA_REDONDA).clave_texto),
+        )
+
+    def test_darle_con_lo_que_no_es_suyo_avisa_a_quien_le_dio(
+        self, juego, quico_delante, apuntar
+    ):
+        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
+        self._arrojar(juego, ID_PALETA)
+        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
+        assert quico_delante.esta_acechando()
+        assert nombres.QUICO in juego.aviso.texto
+
+    def test_mientras_uno_vuela_no_sale_otro(self, juego, quico_delante, apuntar):
+        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
+        self._arrojar(juego, ID_PELOTA_REDONDA)
+        self._arrojar(juego, ID_PELOTA_CUADRADA)
+        assert juego.inventario.tiene(ID_PELOTA_CUADRADA)
+
+    def test_cada_noche_empieza_sin_nada_en_el_aire(self, juego, quico_delante, apuntar):
+        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
+        self._arrojar(juego, ID_PELOTA_REDONDA)
+        empezar_noche(juego)
+        assert juego.objeto_en_vuelo is None
+
+    def test_a_jaimico_hay_que_alumbrarlo_cuando_le_llega(
+        self, juego, plantar_delante, apuntar
+    ):
+        jaimico = plantar_delante(nombres.JAIMICO)
+        jaimico.segundos_para_atacar = MARGEN_INALCANZABLE
+        apuntar(jaimico.punto_torso_en(POSICION_BARRIL))
+        juego.linterna.encendida = True
+        self._arrojar(juego, ID_CAFE_CHURRUMINO)
+        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
+        assert not jaimico.esta_acechando()
+
+    def test_a_oscuras_jaimico_ignora_su_cafe(self, juego, plantar_delante, apuntar):
+        jaimico = plantar_delante(nombres.JAIMICO)
+        jaimico.segundos_para_atacar = MARGEN_INALCANZABLE
+        apuntar(jaimico.punto_torso_en(POSICION_BARRIL))
+        juego.linterna.encendida = False
+        self._arrojar(juego, ID_CAFE_CHURRUMINO)
+        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
+        assert jaimico.esta_acechando()
+
+
+class TestLosPasosAvisanDeQuienLlega:
+    """Unos pasos cada vez que alguien se planta en el patio. Dentro del
+    barril con un panel levantado no se ve nada afuera: sin este aviso, la
+    llegada sería invisible hasta que fuera tarde."""
+
+    @pytest.fixture
+    def escuchar(self, juego, monkeypatch):
+        efectos = []
+        monkeypatch.setattr(
+            juego.audio, "reproducir_efecto", lambda nombre, *a, **k: efectos.append(nombre)
+        )
+        return efectos
+
+    def _llegar(self, juego, nombre):
+        """Hace aparecer a alguien delante como lo haría una ronda de
+        movimiento, pasando por el aviso del bucle principal."""
+        objetivo = next(a for a in juego.noche.animatronics if a.nombre == nombre)
+        antes = juego._nombres_acechando()
+        objetivo.irrumpir()
+        juego._sonar_pasos_de_los_que_llegan(antes)
+        return objetivo
+
+    def test_al_plantarse_alguien_se_le_oye(self, juego, escuchar):
+        empezar_noche(juego)
+        self._llegar(juego, nombres.QUICO)
+        assert escuchar == [EFECTO_PASOS_DERECHA]
+
+    @pytest.mark.parametrize("config", ELENCO, ids=lambda c: c.nombre)
+    def test_el_lado_dice_por_donde_apareció(self, juego, escuchar, config):
+        empezar_noche(juego)
+        llegado = self._llegar(juego, config.nombre)
+        x, _ = llegado.punto_acecho_en(POSICION_BARRIL)
+        esperado = (
+            EFECTO_PASOS_IZQUIERDA if x < ANCHO_PANTALLA // 2 else EFECTO_PASOS_DERECHA
+        )
+        assert escuchar == [esperado]
+
+    def test_quien_ya_estaba_delante_no_vuelve_a_sonar(self, juego, escuchar):
+        empezar_noche(juego)
+        self._llegar(juego, nombres.QUICO)
+        escuchar.clear()
+        juego._sonar_pasos_de_los_que_llegan(juego._nombres_acechando())
+        assert escuchar == []
+
+    def test_moverse_entre_camaras_no_suena(self, juego, escuchar):
+        """Los pasos avisan de que hay alguien afuera, no de cada paso que
+        dan por la vecindad: eso sería ruido constante."""
+        empezar_noche(juego)
+        quico = next(a for a in juego.noche.animatronics if a.nombre == nombres.QUICO)
+        antes = juego._nombres_acechando()
+        quico.habitacion_actual = "segundo_patio"
+        juego._sonar_pasos_de_los_que_llegan(antes)
+        assert escuchar == []
+
+
+class TestBajarLosPanelesConElRaton:
+    """Con el monitor levantado había que soltar el ratón e ir a buscar la
+    tecla para volver al patio. Ahora la franja de abajo lo baja igual que lo
+    sube: pasándole el ratón por encima, y el clic también vale."""
+
+    @pytest.fixture
+    def escondido(self, juego):
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        return juego
+
+    def test_pasar_el_raton_por_la_pestana_baja_el_monitor(self, escondido):
+        """El mismo gesto que lo sube: el jugador no tiene que aprenderse dos
+        formas distintas para el mismo sitio de la pantalla."""
+        escondido.sistema_camaras.activo = True
+        escondido.punto_luz = RECT_TIRA_BAJAR.center
+        escondido._atender_tiras()
+        assert not escondido.sistema_camaras.activo
+
+    def test_al_bajarlo_no_se_vuelve_a_levantar_solo(self, escondido):
+        """La pestaña de subir ocupa esa misma franja: sin el seguro, bajar
+        el monitor lo levantaba otra vez en el fotograma siguiente."""
+        escondido.sistema_camaras.activo = True
+        escondido.punto_luz = RECT_TIRA_BAJAR.center
+        for _ in range(30):
+            escondido._atender_tiras()
+        assert not escondido.sistema_camaras.activo
+
+    def test_sacar_el_raton_y_volver_lo_levanta_de_nuevo(self, escondido):
+        escondido.sistema_camaras.activo = True
+        escondido.punto_luz = RECT_TIRA_BAJAR.center
+        escondido._atender_tiras()
+
+        escondido.punto_luz = (10, 10)
+        self._pasar_el_bloqueo(escondido)
+        escondido._atender_tiras()
+
+        escondido.punto_luz = RECT_TIRA_CAMARAS.center
+        escondido._atender_tiras()
+        assert escondido.sistema_camaras.activo
+
+    def test_recien_bajado_no_responde_ni_saliendo_y_volviendo(self, escondido):
+        """El bug de verdad: se baja el monitor y el ratón sigue ahí abajo,
+        así que cualquier roce en ese instante lo levantaba otra vez."""
+        self._bajar_con_el_raton(escondido)
+        self._salir_y_volver(escondido)
+        assert not escondido.sistema_camaras.activo
+
+    def test_dentro_del_bloqueo_no_responde_aunque_se_salga_y_se_vuelva(self, escondido):
+        self._bajar_con_el_raton(escondido)
+        escondido._descontar_bloqueo_de_tiras(TIRAS_BLOQUEO_SEGUNDOS - 0.1)
+        self._salir_y_volver(escondido)
+        assert not escondido.sistema_camaras.activo
+
+    def test_pasado_el_bloqueo_vuelven_a_responder(self, escondido):
+        self._bajar_con_el_raton(escondido)
+        escondido._descontar_bloqueo_de_tiras(TIRAS_BLOQUEO_SEGUNDOS)
+        self._salir_y_volver(escondido)
+        assert escondido.sistema_camaras.activo
+
+    def test_el_bloqueo_no_estorba_a_la_tecla(self, escondido):
+        """Es un seguro para el ratón: quien usa ESPACIO no se topa con el
+        problema y no tiene por qué esperar."""
+        escondido.sistema_camaras.activo = True
+        escondido._bajar_paneles()
+        escondido._procesar_tecla(pygame.K_SPACE)
+        assert escondido.sistema_camaras.activo
+
+    @staticmethod
+    def _pasar_el_bloqueo(juego):
+        juego._descontar_bloqueo_de_tiras(TIRAS_BLOQUEO_SEGUNDOS)
+
+    @staticmethod
+    def _bajar_con_el_raton(juego):
+        """Baja el monitor por la pestaña, que es como se llega al bloqueo."""
+        juego.sistema_camaras.activo = True
+        juego.punto_luz = RECT_TIRA_BAJAR.center
+        juego._atender_tiras()
+
+    @staticmethod
+    def _salir_y_volver(juego):
+        """Aparta el cursor de la franja y lo trae de vuelta a la pestaña de
+        subir: el gesto que volvía a levantar el monitor sin querer."""
+        juego.punto_luz = (10, 10)
+        juego._atender_tiras()
+        juego.punto_luz = RECT_TIRA_CAMARAS.center
+        juego._atender_tiras()
+
+    def test_con_la_tecla_tampoco_se_levanta_solo(self, escondido):
+        """Bajar con ESPACIO deja el cursor donde estaba, que bien puede ser
+        encima de la pestaña de subir."""
+        escondido.punto_luz = RECT_TIRA_CAMARAS.center
+        escondido._atender_tiras()
+        escondido._procesar_tecla(pygame.K_SPACE)
+        escondido._atender_tiras()
+        assert not escondido.sistema_camaras.activo
+
+    def test_el_clic_en_la_pestana_baja_el_monitor(self, escondido):
+        escondido.sistema_camaras.activo = True
+        escondido._procesar_click(RECT_TIRA_BAJAR.center)
+        assert not escondido.sistema_camaras.activo
+
+    def test_tras_el_clic_tampoco_se_levanta_solo(self, escondido):
+        escondido.sistema_camaras.activo = True
+        escondido.punto_luz = RECT_TIRA_BAJAR.center
+        escondido._procesar_click(RECT_TIRA_BAJAR.center)
+        escondido._atender_tiras()
+        assert not escondido.sistema_camaras.activo
+
+    def test_el_clic_en_la_pestana_cierra_el_tablero(self, escondido):
+        escondido.panel_servicios.activo = True
+        escondido._procesar_click(RECT_TIRA_BAJAR.center)
+        assert not escondido.panel_servicios.activo
+
+    def test_el_clic_en_otro_sitio_sigue_eligiendo_camara(self, escondido):
+        escondido.sistema_camaras.activo = True
+        escondido._procesar_click((100, 100))
+        assert escondido.sistema_camaras.activo
+
+    def test_la_tecla_sigue_funcionando(self, escondido):
+        escondido.sistema_camaras.activo = True
+        escondido._procesar_tecla(pygame.K_SPACE)
+        assert not escondido.sistema_camaras.activo
+
+    def test_la_pestana_se_resalta_al_pasarle_el_raton(self, escondido):
+        escondido.sistema_camaras.activo = True
+        escondido.punto_luz = RECT_TIRA_BAJAR.center
+        assert escondido._tira_resaltada() == "bajar"
+
+    def test_con_el_raton_lejos_no_se_resalta(self, escondido):
+        escondido.sistema_camaras.activo = True
+        escondido.punto_luz = (10, 10)
+        assert escondido._tira_resaltada() == ""
+
+    def test_con_los_paneles_bajados_manda_la_pestaña_que_toca(self, escondido):
+        """Sin panel delante, esa misma franja son las dos pestañas de subir:
+        la de bajar no puede robarles el sitio."""
+        escondido.punto_luz = RECT_TIRA_CAMARAS.center
+        assert escondido._tira_resaltada() == "camaras"
+
+
+class TestElMonitorEntraYSale:
+    """Levantar el panel ya no es un cambio de pantalla instantáneo: el
+    monitor baja del techo con su chasquido y, al bajarlo, se retira por
+    donde vino. Hasta que termina no hay ninguna cámara que mirar."""
+
+    @pytest.fixture
+    def escuchar(self, juego, monkeypatch):
+        efectos = []
+        monkeypatch.setattr(
+            juego.audio, "reproducir_efecto_camara", lambda nombre: efectos.append(nombre)
+        )
+        return efectos
+
+    @pytest.fixture
+    def escondido(self, juego):
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        return juego
+
+    def test_hay_cuadros_de_encendido_en_disco(self, juego):
+        """Sin los "pos N.png" no habría animación que probar, y el resto de
+        esta clase pasaría sin comprobar nada."""
+        assert juego.sistema_camaras.animacion.hay_animacion
+
+    def test_la_pestana_lo_enciende(self, escondido, escuchar):
+        escondido.punto_luz = RECT_TIRA_CAMARAS.center
+        escondido._atender_tiras()
+        assert escondido.sistema_camaras.activo
+        assert escondido.sistema_camaras.animacion.en_marcha
+        assert escuchar == [EFECTO_ENCENDIDO_CAMARAS]
+
+    def test_la_tecla_tambien_lo_enciende(self, escondido, escuchar):
+        escondido._procesar_tecla(pygame.K_SPACE)
+        assert escondido.sistema_camaras.animacion.en_marcha
+        assert escuchar == [EFECTO_ENCENDIDO_CAMARAS]
+
+    def test_mientras_baja_no_se_ve_ninguna_camara(self, escondido):
+        escondido._levantar_camaras()
+        assert escondido.sistema_camaras.animacion.cuadro_actual() is not None
+
+    def test_termina_sola_y_deja_ver_la_camara(self, escondido):
+        escondido._levantar_camaras()
+        self._correr(escondido, CAMARA_ENCENDIDO_SEGUNDOS + FOTOGRAMA)
+        assert not escondido.sistema_camaras.animacion.en_marcha
+        assert escondido.sistema_camaras.animacion.cuadro_actual() is None
+
+    def test_el_chasquido_no_se_repite_mientras_siga_arriba(self, escondido, escuchar):
+        """Con el ratón parado sobre la pestaña, _atender_tiras corre en cada
+        fotograma: si el encendido no supiera que ya está arriba, sonaría en
+        bucle."""
+        escondido.punto_luz = RECT_TIRA_CAMARAS.center
+        for _ in range(30):
+            escondido._atender_tiras()
+        assert escuchar.count(EFECTO_ENCENDIDO_CAMARAS) == 1
+
+    def test_cambiar_de_camara_no_vuelve_a_encenderlo(self, escondido, escuchar):
+        escondido._levantar_camaras()
+        escuchar.clear()
+        escondido.sistema_camaras.cambiar_camara("casa_florinda")
+        assert not escuchar or EFECTO_ENCENDIDO_CAMARAS not in escuchar
+
+    def test_al_bajarlo_el_monitor_se_retira(self, escondido):
+        """Bajar no es cortar la animación: el aparato se va por donde vino."""
+        escondido._levantar_camaras()
+        self._correr(escondido, CAMARA_ENCENDIDO_SEGUNDOS + FOTOGRAMA)
+        escondido._bajar_paneles()
+        assert escondido.sistema_camaras.animacion.en_marcha
+
+    def test_al_salir_solo_se_ve_un_cuadro(self, escondido):
+        """Bajar es una urgencia: se enseña un cuadro y se quita, en vez de
+        dejar el monitor medio segundo tapando el patio."""
+        escondido._levantar_camaras()
+        self._correr(escondido, CAMARA_ENCENDIDO_SEGUNDOS + FOTOGRAMA)
+
+        escondido._bajar_paneles()
+        saliendo = self._recorrer_cuadros(escondido)
+
+        assert len(saliendo) == 1
+        assert not escondido.sistema_camaras.animacion.en_marcha
+
+    def test_la_salida_es_mas_corta_que_la_entrada(self, escondido):
+        assert CAMARA_SALIDA_SEGUNDOS < CAMARA_ENCENDIDO_SEGUNDOS
+
+        escondido._levantar_camaras()
+        self._correr(escondido, CAMARA_ENCENDIDO_SEGUNDOS + FOTOGRAMA)
+        escondido._bajar_paneles()
+        self._correr(escondido, CAMARA_SALIDA_SEGUNDOS + FOTOGRAMA)
+        assert not escondido.sistema_camaras.animacion.en_marcha
+
+    def test_mientras_se_retira_no_se_ve_el_monitor_puesto(self, escondido):
+        """Con el aparato aún moviéndose, lo que manda es el patio: si se
+        diera por puesto, el monitor daría un salto en pantalla."""
+        escondido._levantar_camaras()
+        self._correr(escondido, CAMARA_ENCENDIDO_SEGUNDOS + FOTOGRAMA)
+        assert escondido.sistema_camaras.a_la_vista
+
+        escondido._bajar_paneles()
+        assert not escondido.sistema_camaras.a_la_vista
+
+    def test_empezar_la_noche_no_deja_animacion_a_medias(self, escondido):
+        escondido._levantar_camaras()
+        empezar_noche(escondido)
+        assert not escondido.sistema_camaras.animacion.en_marcha
+        assert not escondido.sistema_camaras.activo
+
+    def test_volver_a_levantarlo_lo_enciende_otra_vez(self, escondido, escuchar):
+        escondido._levantar_camaras()
+        escondido._bajar_paneles()
+        escondido._levantar_camaras()
+        assert escondido.sistema_camaras.animacion.en_marcha
+        assert escuchar.count(EFECTO_ENCENDIDO_CAMARAS) == 2
+
+    def test_los_cuadros_dejan_ver_el_patio_alrededor(self, escondido):
+        """El fondo negro de la lámina se recorta al cargarla; la pantalla
+        del propio aparato, encerrada por el chasis, sigue siendo opaca."""
+        cuadro = escondido.sistema_camaras.animacion._cuadros[0]
+        assert cuadro.get_at((2, 2))[3] == 0, "la esquina tiene que ser transparente"
+        # No se exige 255 exactos: al escalar la lámina al lienzo se
+        # interpolan también los bordes del recorte.
+        assert cuadro.get_at(cuadro.get_rect().center)[3] > 200, (
+            "el centro cae dentro de la pantalla del monitor y va tapado"
+        )
+
+    @staticmethod
+    def _recorrer_cuadros(juego):
+        """Los cuadros distintos que se ven de principio a fin de la
+        animación que esté corriendo."""
+        vistos = []
+        animacion = juego.sistema_camaras.animacion
+        while animacion.en_marcha:
+            cuadro = animacion.cuadro_actual()
+            if not vistos or cuadro is not vistos[-1]:
+                vistos.append(cuadro)
+            juego._actualizar(FOTOGRAMA)
+        return vistos
+
+    @staticmethod
+    def _correr(juego, segundos: float):
+        for _ in range(int(segundos / FOTOGRAMA) + 1):
             juego._actualizar(FOTOGRAMA)
 
-    def test_quico_espera_a_que_aparezca_la_pelota(self, juego, plantar_delante):
-        quico = plantar_delante(nombres.QUICO)
-        self._correr(juego)
-        assert _sigue_jugando(juego)
-        assert quico.esta_acechando(), "sigue delante, solo que sin poder matar"
 
-    def test_con_la_pelota_en_la_mochila_si_ataca(self, juego, plantar_delante):
-        plantar_delante(nombres.QUICO)
-        juego.inventario.guardar(ID_PELOTA_REDONDA)
-        self._correr(juego)
-        assert not _sigue_jugando(juego)
+class TestLaSenalSeCaeAlMoverse:
+    """Si a alguien le toca moverse justo mientras se le está mirando, esa
+    cámara se cae unos segundos: se oye que se fue, pero no se ve hacia
+    dónde."""
 
-    def test_haberla_gastado_mal_no_devuelve_la_tregua(self, juego, plantar_delante):
-        """Tuvo la pelota, se la tiró a quien no era y se quedó sin nada:
-        Quico lo mata igual. La respuesta existió."""
-        plantar_delante(nombres.QUICO)
-        juego.inventario.guardar(ID_PELOTA_REDONDA)
-        juego.inventario.gastar(ID_PELOTA_REDONDA)
-        self._correr(juego)
-        assert not _sigue_jugando(juego)
+    CAMARA_VIGILADA = "casa_florinda"
 
-    def test_don_ramon_no_espera_a_nadie(self, juego, plantar_delante):
-        """Su respuesta es el Sr. Barriga, que está siempre en el panel: la
-        tregua no le toca."""
-        plantar_delante(nombres.DON_RAMON)
-        self._correr(juego)
-        assert not _sigue_jugando(juego)
+    @pytest.fixture
+    def escuchar(self, juego, monkeypatch):
+        efectos = []
+        monkeypatch.setattr(
+            juego.audio, "reproducir_efecto_camara", lambda nombre: efectos.append(nombre)
+        )
+        return efectos
 
-    def test_cada_noche_empieza_con_la_tregua_otra_vez(self, juego, plantar_delante):
-        """La memoria de lo que pasó por sus manos es de esa noche: al
-        empezar la siguiente vuelve a tener su respiro."""
-        plantar_delante(nombres.QUICO)
-        juego.inventario.guardar(ID_PELOTA_REDONDA)
-        plantar_delante(nombres.QUICO)  # inicia otra noche
-        self._correr(juego)
-        assert _sigue_jugando(juego)
+    @pytest.fixture
+    def vigilando(self, juego):
+        """El jugador dentro del barril, mirando la cámara de la casa de Doña
+        Florinda, que es donde arranca Quico."""
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        juego.sistema_camaras.activo = True
+        juego.sistema_camaras.camara_actual = self.CAMARA_VIGILADA
+        return juego
+
+    def _mover(self, juego, nombre, destino):
+        """Mueve a alguien como lo haría una ronda, pasando por el aviso del
+        bucle principal."""
+        objetivo = next(a for a in juego.noche.animatronics if a.nombre == nombre)
+        vigilados = juego._quienes_se_ven()
+        objetivo.habitacion_actual = destino
+        juego._cortar_la_senal_de_quien_se_movio(vigilados)
+        return objetivo
+
+    def test_irse_de_la_camara_mirada_la_tumba(self, vigilando, escuchar):
+        self._mover(vigilando, nombres.QUICO, "casa_paty")
+        assert vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+        assert escuchar == [EFECTO_INTERFERENCIA]
+
+    def test_moverse_en_otra_camara_no_tumba_nada(self, vigilando, escuchar):
+        self._mover(vigilando, nombres.CHILINDRINA, "casa_paty")
+        assert not vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+        assert escuchar == []
+
+    def test_con_el_monitor_bajado_no_se_cae_ninguna(self, vigilando, escuchar):
+        """La interferencia es lo que ve el jugador al mirar, no algo que
+        pase a sus espaldas."""
+        vigilando.sistema_camaras.activo = False
+        self._mover(vigilando, nombres.QUICO, "casa_paty")
+        assert not vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+        assert escuchar == []
+
+    def test_llegar_a_la_camara_mirada_no_la_tumba(self, vigilando, escuchar):
+        """Lo que corta la señal es que se vaya quien estaba dentro; ver
+        llegar a alguien es justo lo que se busca vigilando."""
+        self._mover(vigilando, nombres.CHILINDRINA, self.CAMARA_VIGILADA)
+        assert not vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+        assert escuchar == []
+
+    def test_la_senal_vuelve_sola(self, vigilando):
+        """Esta avería no se restablece desde el barril: se arregla sola."""
+        self._mover(vigilando, nombres.QUICO, "casa_paty")
+        for _ in range(int(CAMARA_INTERFERENCIA_MAXIMA_SEGUNDOS / FOTOGRAMA) + 2):
+            vigilando.sistema_camaras.actualizar(FOTOGRAMA)
+        assert not vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+
+    def test_aguanta_al_menos_el_minimo(self, vigilando):
+        self._mover(vigilando, nombres.QUICO, "casa_paty")
+        for _ in range(int(CAMARA_INTERFERENCIA_MINIMA_SEGUNDOS / FOTOGRAMA) - 1):
+            vigilando.sistema_camaras.actualizar(FOTOGRAMA)
+        assert vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+
+    def test_otro_movimiento_no_alarga_el_corte(self, vigilando, escuchar):
+        """Si cada movimiento reiniciara la cuenta, un personaje inquieto
+        dejaría esa cámara muerta el resto de la noche."""
+        self._mover(vigilando, nombres.QUICO, "casa_paty")
+        escuchar.clear()
+        self._mover(vigilando, nombres.FLORINDA, "casa_godinez")
+        assert escuchar == []
+
+    def test_empezar_la_noche_devuelve_la_senal(self, vigilando):
+        self._mover(vigilando, nombres.QUICO, "casa_paty")
+        empezar_noche(vigilando)
+        assert not vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+
+    def test_una_ronda_de_verdad_tumba_la_camara(self, vigilando, escuchar, monkeypatch):
+        """El fotograma completo: la ronda de movimiento la abre el
+        temporizador dentro de _actualizar, y de ahí tiene que salir el corte
+        sin que nadie lo llame a mano."""
+        monkeypatch.setattr(
+            "vecindad.dominio.animatronicos.entidad.random.randint", lambda *_: 1
+        )
+        vigilando._actualizar(vigilando.temporizador.intervalo_movimiento + FOTOGRAMA)
+        assert vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+        assert EFECTO_INTERFERENCIA in escuchar
+
+
+class TestRecogerDelSuelo:
+    """Cada objeto tiene su sitio en los Lavaderos. Se recoge alumbrándolo y
+    pulsando E, y no se lleva más de uno de cada a la vez."""
+
+    @staticmethod
+    def _en_los_lavaderos(juego, apuntando_a):
+        empezar_noche(juego)
+        for animatronic in juego.noche.animatronics:
+            animatronic.activo = False
+        juego.jugador.posicion = POSICION_LAVADEROS
+        juego.linterna.encendida = True
+        juego.punto_luz = obtener_objeto(apuntando_a).punto_suelo
+
+    def test_alumbrarlo_y_recogerlo(self, juego):
+        self._en_los_lavaderos(juego, ID_BALERO)
+        juego._recoger_objeto()
+        assert juego.inventario.tiene(ID_BALERO)
+        assert not juego.objetos_en_suelo.esta(ID_BALERO)
+
+    def test_a_oscuras_no_se_recoge_nada(self, juego):
+        self._en_los_lavaderos(juego, ID_BALERO)
+        juego.linterna.encendida = False
+        juego._recoger_objeto()
+        assert not juego.inventario.tiene(ID_BALERO)
+
+    def test_desde_el_barril_no_se_recoge_nada(self, juego):
+        self._en_los_lavaderos(juego, ID_BALERO)
+        juego.jugador.posicion = POSICION_BARRIL
+        juego._recoger_objeto()
+        assert not juego.inventario.tiene(ID_BALERO)
+
+    def test_se_recoge_el_que_esta_en_el_centro_del_haz(self, juego):
+        """El haz alcanza a varios a la vez; se lleva el que apunta."""
+        for id_objeto in (ID_PALETA, ID_BALERO, ID_PELOTA_REDONDA):
+            self._en_los_lavaderos(juego, id_objeto)
+            assert juego._objeto_a_la_vista() == id_objeto
+
+    def test_no_se_lleva_dos_iguales(self, juego):
+        self._en_los_lavaderos(juego, ID_BALERO)
+        juego._recoger_objeto()
+        juego.objetos_en_suelo.actualizar(juego.objetos_en_suelo.reaparicion)
+        juego._recoger_objeto()
+        assert juego.inventario.cantidad(ID_BALERO) == 1
+        assert juego.objetos_en_suelo.esta(ID_BALERO)
+
+    def test_con_el_bolsillo_lleno_la_bateria_se_queda(self, juego):
+        self._en_los_lavaderos(juego, ID_BATERIA)
+        juego.linterna.baterias_repuesto = LINTERNA_BATERIAS_MAXIMAS
+        juego._recoger_objeto()
+        assert juego.objetos_en_suelo.esta(ID_BATERIA)
+
+    def test_la_bateria_va_al_bolsillo(self, juego):
+        self._en_los_lavaderos(juego, ID_BATERIA)
+        juego.linterna.baterias_repuesto = 0
+        juego._recoger_objeto()
+        assert juego.linterna.baterias_repuesto == 1
+
+    def test_lo_recogido_vuelve_con_el_paso_de_la_noche(self, juego):
+        self._en_los_lavaderos(juego, ID_BALERO)
+        juego._recoger_objeto()
+        _correr(juego, juego.objetos_en_suelo.reaparicion)
+        assert juego.objetos_en_suelo.esta(ID_BALERO)
+
+
+class TestElSobresaltoAlVerlos:
+    """Encontrarse a alguien plantado en el patio saca un "¡ay!" del jugador.
+    Es su reacción al verlo, así que solo tiene sentido fuera del barril y
+    una vez por encuentro."""
+
+    @pytest.fixture
+    def escuchar(self, juego, monkeypatch):
+        efectos = []
+        monkeypatch.setattr(
+            juego.audio, "reproducir_efecto", lambda nombre, *a, **k: efectos.append(nombre)
+        )
+        return efectos
+
+    def _plantar(self, juego, nombre=nombres.QUICO):
+        objetivo = next(a for a in juego.noche.animatronics if a.nombre == nombre)
+        objetivo.irrumpir()
+        objetivo.segundos_para_atacar = MARGEN_INALCANZABLE
+        return objetivo
+
+    def test_al_aparecer_alguien_el_jugador_se_sobresalta(self, juego, escuchar):
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_BARRIL
+        self._plantar(juego)
+        juego._reaccionar_a_lo_que_ve()
+        assert EFECTO_SORPRESA in escuchar
+
+    def test_no_se_repite_mientras_siga_delante(self, juego, escuchar):
+        """Si sonara en cada fotograma sería un grito continuo."""
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_BARRIL
+        self._plantar(juego)
+        for _ in range(30):
+            juego._reaccionar_a_lo_que_ve()
+        assert escuchar.count(EFECTO_SORPRESA) == 1
+
+    def test_el_patio_vacio_no_sobresalta_a_nadie(self, juego, escuchar):
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_BARRIL
+        juego._reaccionar_a_lo_que_ve()
+        assert EFECTO_SORPRESA not in escuchar
+
+    def test_dentro_del_barril_no_suena(self, juego, escuchar):
+        """Escondido no ve el patio: ahí el aviso son los pasos."""
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        self._plantar(juego)
+        juego._reaccionar_a_lo_que_ve()
+        assert EFECTO_SORPRESA not in escuchar
+
+    def test_asomarse_y_encontrarselo_tambien_sobresalta(self, juego, escuchar):
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        self._plantar(juego)
+        juego._reaccionar_a_lo_que_ve()
+
+        juego.jugador.posicion = POSICION_BARRIL
+        juego._reaccionar_a_lo_que_ve()
+        assert escuchar.count(EFECTO_SORPRESA) == 1
+
+    def test_si_se_va_y_llega_otro_vuelve_a_sonar(self, juego, escuchar):
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_BARRIL
+        quico = self._plantar(juego)
+        juego._reaccionar_a_lo_que_ve()
+
+        quico.ahuyentar()
+        juego._reaccionar_a_lo_que_ve()
+
+        self._plantar(juego, nombres.CHILINDRINA)
+        juego._reaccionar_a_lo_que_ve()
+        assert escuchar.count(EFECTO_SORPRESA) == 2
+
+    def test_desde_los_lavaderos_tambien_se_le_ve(self, juego, escuchar):
+        """El patio se ve entero desde sus dos ángulos."""
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_LAVADEROS
+        self._plantar(juego)
+        juego._reaccionar_a_lo_que_ve()
+        assert EFECTO_SORPRESA in escuchar
 
 
 class TestNuevoJuegoBorraElAvance:

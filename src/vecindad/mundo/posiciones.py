@@ -25,7 +25,7 @@ el sistema de cámaras).
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 from ..config.interfaz import OSCURIDAD_DENTRO_BARRIL, OSCURIDAD_OPACIDAD
 from ..config.rutas import DIR_ASSETS_UI
@@ -47,11 +47,10 @@ class PosicionJugador:
     derecha: Optional[str] = None
     abajo: Optional[str] = None
     arriba: Optional[str] = None
+    # Si aquí hay objetos tirados. Dónde cae cada uno lo dice su propia ficha
+    # (Objeto.punto_suelo en dominio/objetos.py): cada objeto tiene su sitio.
     permite_buscar: bool = False
     es_refugio: bool = False
-    # Punto del lienzo donde se dibuja el objeto tirado en esta posición.
-    # Solo se usa cuando permite_buscar es True.
-    punto_objeto: Tuple[int, int] = (640, 540)
     # Cuánta penumbra tapa la escena. Fuera del barril es casi total y solo
     # la linterna abre hueco; dentro, como la linterna no se puede encender,
     # tiene que entrar algo de luna por la boca del barril.
@@ -69,7 +68,6 @@ POSICIONES: Dict[str, PosicionJugador] = {
         archivo_fondo="lavadero.png",
         derecha=POSICION_BARRIL,
         permite_buscar=True,
-        punto_objeto=(520, 545),
     ),
     POSICION_BARRIL: PosicionJugador(
         id=POSICION_BARRIL,

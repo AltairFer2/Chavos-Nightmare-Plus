@@ -34,3 +34,7 @@ BRILLO_PASO = 10
 
 FPS = 60
 TITULO_JUEGO = "Chaves Nightmare Plus +"
+# Con qué nombre se presenta el juego a Windows para que la barra de tareas
+# lo trate como una aplicación propia y no como Python (ver
+# infraestructura/pantalla.py). Formato Empresa.Producto, sin espacios.
+ID_APLICACION_WINDOWS = "LaVecindadDelChavo.ChavesNightmarePlus"

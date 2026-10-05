@@ -1,30 +1,29 @@
-"""Objetos del juego: catálogo, contrarrestos y aparición en el suelo.
+"""Objetos del juego: catálogo, contrarrestos y su sitio en el suelo.
 
 Hay tres clases de objeto:
 
 - Los seis defensivos (paleta, pelota cuadrada, pelota redonda, balero,
-  chipote chillón y churrumino). Hay un único ejemplar de cada uno por
-  noche: se encuentra tirado en los Lavaderos y, una vez arrojado, ya no
-  vuelve a aparecer. Gastar el equivocado deja al jugador sin respuesta para
-  quien sí lo necesitaba: ese es el riesgo central.
+  chipote chillón y churrumino), que se arrojan a quien corresponda.
 - El café, que no se arroja: se combina con el churrumino para preparar el
   café con churrumino, lo único que calma a Jaimico.
-- Las baterías de linterna, que sí reaparecen durante toda la noche.
+- Las baterías de linterna.
+
+Nada sale por sorteo. Cada objeto tiene su sitio fijo en los Lavaderos, la
+noche arranca con todos puestos y, al recogerlo, su sitio se queda vacío un
+tiempo conocido antes de que vuelva a estar ahí. Lo que castiga usar el
+equivocado (o fallar el tiro) es tener que esperar a que vuelva con alguien
+delante, y eso el jugador lo puede calcular.
 
 Cada objeto conoce su celda dentro de la rejilla de assets/ui/objetos.png
 (ver presentacion/iconos.py) y a quién elimina al arrojarse.
 """
 
-import random
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 from ..config.jugabilidad import (
-    NOCHE_SIN_BATERIAS_FIJAS,
-    OBJETO_INTERVALO_APARICION_SEGUNDOS,
-    OBJETO_PROBABILIDAD_BASE,
-    OBJETO_PROBABILIDAD_MINIMA,
-    OBJETO_REDUCCION_POR_NOCHE,
+    OBJETO_REAPARICION_POR_NOCHE,
+    OBJETO_REAPARICION_SEGUNDOS,
 )
 from ..mundo.posiciones import POSICIONES_CON_OBJETOS
 
@@ -44,41 +43,57 @@ class Objeto:
     id: str
     clave_texto: str  # clave de idiomas.py con el nombre visible
     celda: Tuple[int, int]  # columna y fila dentro de la rejilla de iconos
-    # A quién elimina si se le arroja, en orden de prioridad: se resuelve
-    # sobre el primero de la lista que esté presente y lo acepte.
+    # A quién elimina si se le arroja y le da.
     elimina: Tuple[str, ...] = ()
     arrojable: bool = False
+    # Dónde aparece siempre en los Lavaderos, en píxeles del lienzo base.
+    # None para lo que no se encuentra tirado (el café ya preparado).
+    punto_suelo: Optional[Tuple[int, int]] = None
 
 
+# Los sitios van repartidos por el suelo de los Lavaderos, separados lo
+# bastante como para alumbrar uno sin tener encima el de al lado.
 CATALOGO: Dict[str, Objeto] = {
     ID_PALETA: Objeto(
         id=ID_PALETA, clave_texto="objeto_paleta", celda=(0, 0),
         elimina=("La Chilindrina", "El Chavo"), arrojable=True,
+        punto_suelo=(245, 500),
     ),
     ID_PELOTA_CUADRADA: Objeto(
         id=ID_PELOTA_CUADRADA, clave_texto="objeto_pelota_cuadrada", celda=(1, 0),
         elimina=("Quico", "El Chavo"), arrojable=True,
+        punto_suelo=(400, 600),
     ),
     ID_PELOTA_REDONDA: Objeto(
         id=ID_PELOTA_REDONDA, clave_texto="objeto_pelota_redonda", celda=(2, 0),
         elimina=("Quico", "El Chavo"), arrojable=True,
+        punto_suelo=(560, 470),
     ),
     ID_BALERO: Objeto(
         id=ID_BALERO, clave_texto="objeto_balero", celda=(0, 1),
         elimina=("La Chilindrina", "El Chavo"), arrojable=True,
+        punto_suelo=(640, 620),
     ),
     ID_CHIPOTE: Objeto(
         id=ID_CHIPOTE, clave_texto="objeto_chipote", celda=(1, 1),
         elimina=("El Chavo",), arrojable=True,
+        punto_suelo=(760, 470),
     ),
     # Arrojado solo no mata a nadie: únicamente El Chavo lo detecta y se
     # entretiene con él unos segundos.
     ID_CHURRUMINO: Objeto(
         id=ID_CHURRUMINO, clave_texto="objeto_churrumino", celda=(2, 1),
         arrojable=True,
+        punto_suelo=(880, 610),
     ),
-    ID_CAFE: Objeto(id=ID_CAFE, clave_texto="objeto_cafe", celda=(0, 2)),
-    ID_BATERIA: Objeto(id=ID_BATERIA, clave_texto="objeto_bateria", celda=(1, 2)),
+    ID_CAFE: Objeto(
+        id=ID_CAFE, clave_texto="objeto_cafe", celda=(0, 2),
+        punto_suelo=(1100, 445),
+    ),
+    ID_BATERIA: Objeto(
+        id=ID_BATERIA, clave_texto="objeto_bateria", celda=(1, 2),
+        punto_suelo=(1000, 530),
+    ),
     ID_CAFE_CHURRUMINO: Objeto(
         id=ID_CAFE_CHURRUMINO, clave_texto="objeto_cafe_churrumino", celda=(2, 2),
         elimina=("Jaimico",), arrojable=True,
@@ -91,9 +106,12 @@ OBJETOS_DEFENSIVOS: Tuple[str, ...] = (
     ID_BALERO, ID_CHIPOTE, ID_CHURRUMINO,
 )
 
-# Objetos de los que solo hay uno por noche: cuando aparecen, se retiran de
-# la bolsa y ya no vuelven a salir.
-OBJETOS_UNICOS: Tuple[str, ...] = OBJETOS_DEFENSIVOS + (ID_CAFE,)
+# Todo lo que el jugador puede encontrar tirado: lo que tiene sitio en el
+# suelo, en el orden del catálogo.
+OBJETOS_QUE_APARECEN: Tuple[str, ...] = tuple(
+    id_objeto for id_objeto, objeto in CATALOGO.items()
+    if objeto.punto_suelo is not None
+)
 
 
 def obtener_objeto(id_objeto: str) -> Objeto:
@@ -103,66 +121,52 @@ def obtener_objeto(id_objeto: str) -> Objeto:
         raise ValueError(f"Objeto desconocido: {id_objeto}") from error
 
 
-def objetos_que_ahuyentan_a(nombre: str) -> Tuple[str, ...]:
-    """Con qué objetos se puede quitar de encima a ese personaje.
-
-    Es el índice inverso de `Objeto.elimina`, y sale vacío para quien no se
-    contrarresta con un objeto (Don Ramón se va con el Sr. Barriga y a Doña
-    Florinda la empuja el audio). Sirve para saber si el jugador tiene con
-    qué responderle: ver dominio/animatronicos/enfrentamiento.py.
-    """
-    return tuple(
-        id_objeto for id_objeto, objeto in CATALOGO.items()
-        if nombre in objeto.elimina
-    )
+def reaparicion_de_la_noche(numero_noche: int) -> float:
+    """Segundos que tarda un objeto recogido en volver a su sitio esa noche."""
+    return OBJETO_REAPARICION_POR_NOCHE.get(numero_noche, OBJETO_REAPARICION_SEGUNDOS)
 
 
 class ObjetosEnElSuelo:
-    """Qué hay tirado en cada sitio y cuándo aparece algo nuevo.
+    """Qué objetos están ahora mismo en su sitio y cuánto le falta a cada
+    uno de los que no para volver.
 
-    Cada sitio sostiene un objeto a la vez. Cada cierto rato, un sitio vacío
-    tira su probabilidad; si sale, aparece un objeto de la bolsa de únicos
-    que queden por salir o, si ya salieron todos, una batería.
+    La noche arranca con todos puestos. Recoger uno arranca su cuenta; al
+    llegar a cero vuelve a estar ahí. Cada objeto lleva su propia cuenta, así
+    que gastar la paleta no retrasa al balero.
     """
 
     def __init__(self, numero_noche: int):
-        self.probabilidad = self._probabilidad_de_la_noche(numero_noche)
-        self._objetos: Dict[str, Optional[str]] = {
-            id_posicion: None for id_posicion in POSICIONES_CON_OBJETOS
+        self.reaparicion = reaparicion_de_la_noche(numero_noche)
+        # Segundos que le faltan a cada objeto para volver; 0 es que está.
+        self._faltan: Dict[str, float] = {
+            id_objeto: 0.0 for id_objeto in OBJETOS_QUE_APARECEN
         }
-        self._por_aparecer = list(OBJETOS_UNICOS)
-        random.shuffle(self._por_aparecer)
-        self._tiempo_para_sorteo = OBJETO_INTERVALO_APARICION_SEGUNDOS
-
-    @staticmethod
-    def _probabilidad_de_la_noche(numero_noche: int) -> float:
-        noches_de_escasez = max(0, numero_noche - (NOCHE_SIN_BATERIAS_FIJAS - 1))
-        return max(
-            OBJETO_PROBABILIDAD_MINIMA,
-            OBJETO_PROBABILIDAD_BASE - OBJETO_REDUCCION_POR_NOCHE * noches_de_escasez,
-        )
 
     def actualizar(self, dt: float):
-        self._tiempo_para_sorteo -= dt
-        if self._tiempo_para_sorteo > 0.0:
-            return
-        self._tiempo_para_sorteo = OBJETO_INTERVALO_APARICION_SEGUNDOS
-        for id_posicion, objeto in self._objetos.items():
-            if objeto is None and random.random() < self.probabilidad:
-                self._objetos[id_posicion] = self._siguiente_objeto()
+        for id_objeto, faltan in self._faltan.items():
+            if faltan > 0.0:
+                self._faltan[id_objeto] = max(0.0, faltan - dt)
 
-    def _siguiente_objeto(self) -> str:
-        """Saca un único de la bolsa mientras queden; después, baterías."""
-        if self._por_aparecer:
-            return self._por_aparecer.pop()
-        return ID_BATERIA
+    def esta(self, id_objeto: str) -> bool:
+        """Si ese objeto está ahora mismo en su sitio."""
+        return self._faltan.get(id_objeto) == 0.0
 
-    def objeto_en(self, id_posicion: str) -> Optional[str]:
-        return self._objetos.get(id_posicion)
+    def segundos_para_volver(self, id_objeto: str) -> float:
+        return self._faltan.get(id_objeto, 0.0)
 
-    def recoger(self, id_posicion: str) -> Optional[str]:
-        """Levanta lo que haya en ese sitio y lo deja vacío."""
-        objeto = self._objetos.get(id_posicion)
-        if objeto is not None:
-            self._objetos[id_posicion] = None
-        return objeto
+    def objetos_en(self, id_posicion: str) -> Tuple[str, ...]:
+        """Los que están en su sitio, si ese es un sitio donde se busca. En
+        el resto no hay nada tirado."""
+        if id_posicion not in POSICIONES_CON_OBJETOS:
+            return ()
+        return tuple(
+            id_objeto for id_objeto in OBJETOS_QUE_APARECEN if self.esta(id_objeto)
+        )
+
+    def recoger(self, id_objeto: str) -> bool:
+        """Lo levanta de su sitio y arranca la cuenta para que vuelva. False
+        si no estaba."""
+        if not self.esta(id_objeto):
+            return False
+        self._faltan[id_objeto] = self.reaparicion
+        return True

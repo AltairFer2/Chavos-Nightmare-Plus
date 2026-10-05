@@ -17,6 +17,8 @@ import pygame
 
 from ..config.interfaz import (
     ALTO_ANIMATRONIC_VISTA,
+    ARROJO_ALTURA_ARCO,
+    ARROJO_ORIGEN,
     COLOR_GRIS,
     COLOR_GRIS_OSCURO,
     ICONO_OBJETO_SUELO,
@@ -107,23 +109,25 @@ class VistaJugador:
             superficie.blit(texto, texto.get_rect(center=(ANCHO_PANTALLA // 2, 140)))
 
     def _dibujar_objeto(self, superficie, posicion, objetos_en_suelo, fuente, idiomas):
-        id_objeto = objetos_en_suelo.objeto_en(posicion.id)
-        if id_objeto is None:
-            return
+        """Dibuja lo que esté en su sitio, cada cosa en el suyo. Lo que se
+        recogió y todavía no vuelve simplemente no está."""
+        for id_objeto in objetos_en_suelo.objetos_en(posicion.id):
+            self._dibujar_objeto_suelto(
+                superficie, obtener_objeto(id_objeto).punto_suelo, id_objeto,
+                fuente, idiomas,
+            )
 
+    def _dibujar_objeto_suelto(self, superficie, punto, id_objeto, fuente, idiomas):
         icono = self._iconos.obtener(id_objeto, ICONO_OBJETO_SUELO)
         if icono is not None:
-            superficie.blit(icono, icono.get_rect(center=posicion.punto_objeto))
+            superficie.blit(icono, icono.get_rect(center=punto))
         if fuente and idiomas:
             nombre = idiomas.t(obtener_objeto(id_objeto).clave_texto)
             texto = fuente.render(nombre, True, COLOR_OBJETO)
             superficie.blit(
                 texto,
                 texto.get_rect(
-                    midtop=(
-                        posicion.punto_objeto[0],
-                        posicion.punto_objeto[1] + ICONO_OBJETO_SUELO // 2 + 4,
-                    )
+                    midtop=(punto[0], punto[1] + ICONO_OBJETO_SUELO // 2 + 4)
                 ),
             )
 
@@ -136,6 +140,24 @@ class VistaJugador:
         pisa = animatronic.punto_acecho_en(id_posicion)
         if figura is not None and pisa is not None:
             superficie.blit(figura, figura.get_rect(midbottom=pisa))
+
+    def dibujar_objeto_en_vuelo(self, superficie, objeto_en_vuelo):
+        """El objeto arrojado camino de donde se apuntó, en arco desde la
+        mano del jugador. Va encima de la penumbra para que se vea adónde
+        fue aunque se arroje a oscuras."""
+        icono = self._iconos.obtener(objeto_en_vuelo.id_objeto, ICONO_OBJETO_SUELO)
+        if icono is None:
+            return
+        avance = objeto_en_vuelo.progreso
+        origen_x, origen_y = ARROJO_ORIGEN
+        destino_x, destino_y = objeto_en_vuelo.destino
+        # Parábola que vale 0 en los dos extremos y 1 a mitad de camino.
+        elevacion = 4 * avance * (1 - avance) * ARROJO_ALTURA_ARCO
+        centro = (
+            origen_x + (destino_x - origen_x) * avance,
+            origen_y + (destino_y - origen_y) * avance - elevacion,
+        )
+        superficie.blit(icono, icono.get_rect(center=centro))
 
     def _dibujar_oscuridad(self, superficie, posicion, linterna, punto_luz):
         """Tapa la escena de penumbra y, si la linterna está encendida, abre

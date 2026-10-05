@@ -34,20 +34,35 @@ ALTURA_TORSO = ALTO_ANIMATRONIC_VISTA // 2
 BATERIAS_INICIALES_EN_BARRIL = 2
 NOCHE_SIN_BATERIAS_FIJAS = 4
 
-# Cada cuánto se revisa si aparece un objeto nuevo en el sitio vacío y con
-# qué probabilidad aparece. La probabilidad baja una vez que desaparecen las
-# baterías fijas del barril.
-#
-# El ritmo se acortó al quedar los Lavaderos como único sitio donde se busca:
-# antes había dos (contando la Entrada), así que con los mismos números el
-# jugador recibía la mitad de objetos que cuando se calibraron. La espera
-# media entre objetos es intervalo / probabilidad: ~9 s la primera noche y
-# ~13 s la sexta, contando además que hay que ir hasta allá, alumbrar el
-# suelo y recogerlo.
-OBJETO_INTERVALO_APARICION_SEGUNDOS = 8.0
-OBJETO_PROBABILIDAD_BASE = 0.85
-OBJETO_PROBABILIDAD_MINIMA = 0.45
-OBJETO_REDUCCION_POR_NOCHE = 0.08
+# Repuestos que caben en el bolsillo. Con el bolsillo lleno la batería del
+# suelo no se puede recoger, así que acaparar no sirve de nada: hay que
+# gastar para poder llevarse otra. Las primeras noches se arranca justo con
+# el tope puesto (BATERIAS_INICIALES_EN_BARRIL).
+LINTERNA_BATERIAS_MAXIMAS = 2
+
+# Cada objeto tiene su sitio fijo en los Lavaderos (ver dominio/objetos.py) y
+# la noche arranca con todos puestos. Al recogerlo, su sitio queda vacío
+# durante este tiempo exacto, el mismo para todos los objetos. No hay sorteo:
+# lo que se juega es saber cuándo vuelve cada cosa y no malgastarla.
+# Las noches que no aparezcan (la personalizada) usan
+# OBJETO_REAPARICION_SEGUNDOS.
+OBJETO_REAPARICION_POR_NOCHE = {1: 20.0, 2: 22.0, 3: 25.0, 4: 30.0, 5: 35.0, 6: 40.0}
+OBJETO_REAPARICION_SEGUNDOS = 30.0
+
+# --- Puntería al arrojar ---
+# El objeto vuela hacia donde apunta el ratón y le da a quien tenga el cuerpo
+# debajo: una elipse alrededor del torso, de la cabeza a las rodillas. Se
+# encoge con el nivel_ia hasta ARROJO_ACIERTO_ESCALA_MINIMA: a nivel bajo
+# vale cualquier parte del cuerpo; al máximo hay que apuntar al centro.
+# Antes era un círculo de pecho y apuntar a la cara fallaba, que es justo
+# donde el jugador apunta sin pensarlo.
+ARROJO_ACIERTO_SEMIANCHO = 120
+ARROJO_ACIERTO_SEMIALTO = ALTURA_TORSO - 30
+ARROJO_ACIERTO_ESCALA_MINIMA = 0.6
+# Lo que tarda el objeto en llegar desde la mano hasta donde se apuntó. El
+# efecto se resuelve al caer, no al soltarlo, y mientras vuela no se puede
+# arrojar otro.
+ARROJO_DURACION_VUELO_SEGUNDOS = 0.3
 
 # El churrumino arrojado solo entretiene a El Chavo este rato, en vez de
 # ahuyentarlo como hacen los demás objetos.
@@ -78,3 +93,12 @@ BARRIGA_LLEGADA_MAXIMA_SEGUNDOS = 15.0
 # las cámaras. El contador baja solo si se deja de mirarlo.
 CAMARA_SABOTAJE_SEGUNDOS = 8.0
 CAMARA_SABOTAJE_RECUPERACION = 0.5  # cuánto se enfría por segundo sin mirarlo
+
+# --- Interferencia por movimiento ---
+# Cuánto se queda sin señal una cámara cuando alguien se mueve justo mientras
+# el jugador la está mirando. Sale un tiempo al azar dentro de este rango, así
+# que no se puede contar los segundos de memoria para saber cuándo vuelve.
+# Esta avería se arregla sola: no es el sabotaje de El Chavo, que deja todo el
+# circuito caído hasta ir a restablecerlo al barril.
+CAMARA_INTERFERENCIA_MINIMA_SEGUNDOS = 3.0
+CAMARA_INTERFERENCIA_MAXIMA_SEGUNDOS = 6.0

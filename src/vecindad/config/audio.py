@@ -22,6 +22,16 @@ PISTAS_MUSICA = {
 # Efecto que suena al saltar de una cámara a otra (subcarpeta camaras/).
 EFECTO_CAMBIO_CAMARA = "cambio"
 
+# Chasquido del tubo al levantar el monitor (subcarpeta camaras/). Acompaña a
+# la animación del monitor bajando: suena una vez al abrir el panel, no cada
+# vez que se cambia de cámara.
+EFECTO_ENCENDIDO_CAMARAS = "encendido"
+
+# Corte de señal de una cámara cuando alguien se mueve justo mientras se le
+# está mirando (subcarpeta camaras/). Es el aviso de que esa vista se acaba
+# de caer: sin él, la interferencia parecería un fallo del juego.
+EFECTO_INTERFERENCIA = "interferencia"
+
 # Efecto del golpe del susto final, al perder (subcarpeta efectos/).
 EFECTO_SUSTO = "jumpscare"
 
@@ -38,6 +48,19 @@ EFECTO_RAMON_SE_VA = "ramon se va"
 # efectos/). Es el sonido de reparar la cinta, no la grabación en sí: esa
 # suena desde el monitor de cámaras, con EFECTOS_LLAMADA_FLORINDA.
 EFECTO_REPARACION = "reparacion"
+
+# El sobresalto del jugador al toparse con alguien en el patio (subcarpeta
+# efectos/). Es su reacción, no la del personaje: suena una vez por
+# encuentro, cuando pasa de no tener a nadie delante a tenerlo.
+EFECTO_SORPRESA = "sorprendido"
+
+# Pasos con los que un personaje anuncia que acaba de plantarse en el Primer
+# Patio (subcarpeta efectos/). Son dos grabaciones del mismo paso, una por
+# lado: suena la que corresponde a la mitad del patio donde apareció, así el
+# aviso además dice hacia dónde mirar. Es la única pista que tiene el jugador
+# cuando está dentro del barril con un panel levantado.
+EFECTO_PASOS_IZQUIERDA = "cambio left"
+EFECTO_PASOS_DERECHA = "cambio right"
 
 # Grabaciones de Quico con las que se llama a Doña Florinda (subcarpeta
 # efectos/). Suena una al azar cada vez, para que usar el audio varias veces

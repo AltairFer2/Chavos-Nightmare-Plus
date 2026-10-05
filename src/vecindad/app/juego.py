@@ -15,25 +15,32 @@ import pygame
 
 from ..config.audio import (
     EFECTO_CAMBIO_CAMARA,
+    EFECTO_ENCENDIDO_CAMARAS,
+    EFECTO_INTERFERENCIA,
     EFECTO_LLAMADA_BARRIGA,
     EFECTO_NOCHE_SUPERADA,
+    EFECTO_PASOS_DERECHA,
+    EFECTO_PASOS_IZQUIERDA,
     EFECTO_RAMON_SE_VA,
     EFECTO_REPARACION,
+    EFECTO_SORPRESA,
     EFECTO_SUSTO,
     EFECTOS_LLAMADA_FLORINDA,
     PROPORCION_VOLUMEN_EN_PAUSA,
 )
-from ..config.interfaz import COLOR_NEGRO
+from ..config.interfaz import COLOR_NEGRO, TIRAS_BLOQUEO_SEGUNDOS
 from ..config.ventana import ALTO_PANTALLA, ANCHO_PANTALLA, FPS
 from ..dominio.animatronicos import (
+    acechando,
     acechando_en,
     detectar_luz_mortal,
     detectar_luz_que_descarga,
-    esta_en_tregua,
     iluminados_en,
     nombres,
+    objetivo_del_arrojo,
     resolver_arrojo,
 )
+from ..dominio.arrojo import ObjetoEnVuelo
 from ..dominio.inventario import ORDEN_ARROJABLES, Inventario
 from ..dominio.jugador import Jugador
 from ..dominio.linterna import Linterna, baterias_iniciales, esta_iluminado
@@ -41,6 +48,7 @@ from ..dominio.objetos import ID_BATERIA, ObjetosEnElSuelo, obtener_objeto
 from ..dominio.servicios import Resultado, Servicio, ServiciosUtilidad
 from ..dominio.temporizador import TemporizadorNoche
 from ..i18n import GestorIdiomas
+from ..mundo.posiciones import POSICION_BARRIL
 from ..infraestructura.guardado import (
     Configuracion,
     ProgresoJugador,
@@ -50,6 +58,8 @@ from ..infraestructura.audio import GestorAudio
 from ..infraestructura.pantalla import GestorPantalla
 from ..presentacion.camaras import SistemaCamaras
 from ..presentacion.hud import (
+    RECT_FRANJA_TIRAS,
+    RECT_TIRA_BAJAR,
     RECT_TIRA_CAMARAS,
     RECT_TIRA_SERVICIOS,
     EstadoHud,
@@ -160,7 +170,17 @@ class Juego:
 
         self.noche = Noche()
         self.punto_luz = (ANCHO_PANTALLA // 2, ALTO_PANTALLA // 2)
+        # El objeto que va por el aire, si hay uno: su efecto llega al caer.
+        self.objeto_en_vuelo = None
         self.aviso = AvisoTemporal()
+        # Si en el fotograma anterior tenía a alguien delante, para que el
+        # sobresalto suene al encontrárselo y no en bucle.
+        self._vio_a_alguien = False
+        # Los dos seguros de las pestañas de abajo: uno se levanta al salir el
+        # cursor de la franja y el otro es un rato muerto tras bajar un panel
+        # (ver _atender_tiras).
+        self._tira_usada = False
+        self._tiras_bloqueadas = 0.0
 
         self._ejecutando = True
 
@@ -184,11 +204,13 @@ class Juego:
         self.inventario.reiniciar()
         self.servicios.reiniciar(self.noche.numero)
         self.objetos_en_suelo = ObjetosEnElSuelo(self.noche.numero)
-        self.sistema_camaras.camara_actual = CAMARA_INICIAL
-        self.sistema_camaras.activo = False
-        self.sistema_camaras.reparar()
+        self.sistema_camaras.reiniciar(CAMARA_INICIAL)
         self.panel_servicios.activo = False
+        self.objeto_en_vuelo = None
         self.aviso.limpiar()
+        self._vio_a_alguien = False
+        self._tira_usada = False
+        self._tiras_bloqueadas = 0.0
         self._entrar_a_la_noche(nueva_partida)
 
     def _entrar_a_la_noche(self, nueva_partida: bool):
@@ -363,22 +385,53 @@ class Juego:
         return self.sistema_camaras.activo or self.panel_servicios.activo
 
     def _alternar_camaras(self):
+        if self.sistema_camaras.activo:
+            self._bajar_paneles()
+            return
         self.panel_servicios.activo = False
-        self.sistema_camaras.alternar_panel()
+        self._levantar_camaras()
+
+    def _levantar_camaras(self):
+        """Sube el monitor con su encendido: la animación del aparato bajando
+        del techo la lleva el propio panel, y el chasquido del tubo se suelta
+        aquí, que es donde vive el audio."""
+        if self.sistema_camaras.abrir():
+            self.audio.reproducir_efecto_camara(EFECTO_ENCENDIDO_CAMARAS)
 
     def _alternar_servicios(self):
+        if self.panel_servicios.activo:
+            self._bajar_paneles()
+            return
         self.sistema_camaras.activo = False
-        self.panel_servicios.alternar()
+        self.panel_servicios.activo = True
 
     def _procesar_click(self, posicion):
         if not self.gestor_estados.jugando():
             return
-        if self.sistema_camaras.activo:
-            self._seleccionar_camara(posicion)
-        elif self.panel_servicios.activo:
-            self._usar_servicio(posicion)
-        elif not self.jugador.esta_escondido:
+        if self._hay_panel_delante():
+            # La pestaña de abajo baja el panel, se esté en el monitor o en
+            # el tablero. Basta con pasarle el ratón (ver _atender_tiras),
+            # pero el clic también vale: quien venga de pulsar un botón del
+            # tablero no tiene por qué saber que aquí no hace falta.
+            if RECT_TIRA_BAJAR.collidepoint(posicion):
+                self._bajar_paneles()
+            elif self.sistema_camaras.activo:
+                self._seleccionar_camara(posicion)
+            else:
+                self._usar_servicio(posicion)
+            return
+        if not self.jugador.esta_escondido:
             self.linterna.alternar()
+
+    def _bajar_paneles(self):
+        """Retira lo que estuviera levantado y deja muerta un rato la franja
+        de abajo: las pestañas de subir ocupan ese mismo sitio, así que sin
+        los seguros bajar el monitor sería volverlo a levantar en el
+        fotograma siguiente."""
+        self.sistema_camaras.activo = False
+        self.panel_servicios.activo = False
+        self._tira_usada = True
+        self._tiras_bloqueadas = TIRAS_BLOQUEO_SEGUNDOS
 
     def _seleccionar_camara(self, posicion):
         if self.sistema_camaras.audio_en(posicion):
@@ -410,49 +463,80 @@ class Juego:
     # ------------------------------------------------------------------
     def _recoger_objeto(self):
         """Las baterías van directas a la linterna; el resto, al inventario."""
-        if self._objeto_a_la_vista() is None:
+        id_objeto = self._objeto_a_la_vista()
+        if id_objeto is None or not self.objetos_en_suelo.recoger(id_objeto):
             return
-        id_objeto = self.objetos_en_suelo.recoger(self.jugador.posicion)
         if id_objeto == ID_BATERIA:
             self.linterna.guardar_bateria()
-        elif id_objeto is not None:
+        else:
             self.inventario.guardar(id_objeto)
 
     def _objeto_a_la_vista(self):
-        """Id del objeto que el jugador tiene iluminado en el suelo, o None.
-        Sin apuntarle con la linterna no se puede recoger nada."""
+        """Id del objeto que el jugador puede recoger ahora mismo, o None.
+
+        Sin apuntarle con la linterna no se puede recoger nada, y si el haz
+        alcanza a varios se recoge el que esté más cerca del centro: para
+        los otros hay que mover la luz."""
         posicion = self.jugador.posicion_actual
         if not posicion.permite_buscar or not self.linterna.encendida:
             return None
-        id_objeto = self.objetos_en_suelo.objeto_en(posicion.id)
-        if id_objeto is None or not esta_iluminado(posicion.punto_objeto, self.punto_luz):
-            return None
-        return id_objeto
+        x, y = self.punto_luz
+        mas_cerca = None
+        menor_distancia = None
+        for id_objeto in self.objetos_en_suelo.objetos_en(posicion.id):
+            punto = obtener_objeto(id_objeto).punto_suelo
+            if not self._le_cabe(id_objeto) or not esta_iluminado(punto, self.punto_luz):
+                continue
+            distancia = (x - punto[0]) ** 2 + (y - punto[1]) ** 2
+            if menor_distancia is None or distancia < menor_distancia:
+                mas_cerca, menor_distancia = id_objeto, distancia
+        return mas_cerca
+
+    def _le_cabe(self, id_objeto: str) -> bool:
+        """No se lleva más de uno de cada cosa, ni más baterías de las que
+        caben en el bolsillo. Lo que no le cabe ni se recoge ni saca el aviso
+        de recogerlo: se queda en su sitio hasta que gaste el suyo."""
+        if id_objeto == ID_BATERIA:
+            return not self.linterna.baterias_llenas
+        return not self.inventario.tiene(id_objeto)
 
     def _combinar_cafe(self):
         if self.inventario.combinar_cafe():
             self._avisar("cafe_preparado")
 
     def _arrojar(self, indice: int):
-        """Arroja el objeto de esa ranura contra quien tenga delante. El
-        objeto se gasta siempre, acierte o no: ese es el castigo por tirar el
-        que no tocaba."""
+        """Arroja el objeto de esa ranura hacia donde apunta el ratón. Se
+        gasta siempre, acierte o no: ese es el castigo por fallar el tiro o
+        por tirar el que no tocaba. Mientras uno vuela no sale otro."""
         if self.jugador.esta_escondido or indice >= len(ORDEN_ARROJABLES):
+            return
+        if self.objeto_en_vuelo is not None:
             return
         id_objeto = ORDEN_ARROJABLES[indice]
         if not self.inventario.gastar(id_objeto):
             return
-
-        nombre_objeto = self.idiomas.t(obtener_objeto(id_objeto).clave_texto)
-        resultado = resolver_arrojo(
-            acechando_en(self.noche.animatronics, self.jugador.posicion),
-            id_objeto,
-            iluminados_en(
-                self.noche.animatronics, self.jugador.posicion,
-                self.punto_luz, self.linterna.encendida,
-            ),
+        self.objeto_en_vuelo = ObjetoEnVuelo(
+            id_objeto, tuple(self.punto_luz), self.jugador.posicion
         )
 
+    def _avanzar_objeto_en_vuelo(self, dt: float):
+        """Al caer el objeto se decide a quién le dio y qué le hizo. La luz
+        se mira en ese momento: a Jaimico hay que tenerlo alumbrado cuando
+        le llega el café, no cuando se suelta."""
+        vuelo = self.objeto_en_vuelo
+        if vuelo is None or not vuelo.avanzar(dt):
+            return
+        self.objeto_en_vuelo = None
+        alcanzado = objetivo_del_arrojo(
+            self.noche.animatronics, vuelo.id_posicion, vuelo.destino
+        )
+        iluminado = alcanzado is not None and alcanzado.nombre in iluminados_en(
+            self.noche.animatronics, vuelo.id_posicion,
+            self.punto_luz, self.linterna.encendida,
+        )
+        resultado = resolver_arrojo(alcanzado, vuelo.id_objeto, iluminado)
+
+        nombre_objeto = self.idiomas.t(obtener_objeto(vuelo.id_objeto).clave_texto)
         if resultado.eliminado is not None:
             self._avisar(
                 "arrojo_elimina", objeto=nombre_objeto,
@@ -460,8 +544,13 @@ class Juego:
             )
         elif resultado.retrasado is not None:
             self._avisar("arrojo_retrasa", nombre=resultado.retrasado.nombre)
+        elif resultado.alcanzado is None:
+            self._avisar("arrojo_fallado", objeto=nombre_objeto)
         else:
-            self._avisar("arrojo_perdido", objeto=nombre_objeto)
+            self._avisar(
+                "arrojo_perdido", objeto=nombre_objeto,
+                nombre=resultado.alcanzado.nombre,
+            )
 
     # ------------------------------------------------------------------
     # Servicios del barril
@@ -548,6 +637,7 @@ class Juego:
             return
 
         self.punto_luz = self.gestor_pantalla.posicion_en_lienzo(pygame.mouse.get_pos())
+        self._descontar_bloqueo_de_tiras(dt)
         self._atender_tiras()
         self.linterna.actualizar(dt)
         self.objetos_en_suelo.actualizar(dt)
@@ -560,7 +650,13 @@ class Juego:
             # puede esquivar cerrando un panel.
             self._perder(nombres.BARRIGA, "game_over_barriga")
             return
+        acechaban = self._nombres_acechando()
+        vigilados = self._quienes_se_ven()
         self.temporizador.actualizar(dt, self._elenco_en_movimiento())
+        self._sonar_pasos_de_los_que_llegan(acechaban)
+        self._cortar_la_senal_de_quien_se_movio(vigilados)
+        self._reaccionar_a_lo_que_ve()
+        self._avanzar_objeto_en_vuelo(dt)
         self.aviso.actualizar(dt)
 
         if self._murio_por_la_luz():
@@ -579,18 +675,113 @@ class Juego:
         self.reloj_victoria.iniciar(self.noche.personalizada)
         self.gestor_estados.cambiar_a(EstadoJuego.NOCHE_SUPERADA_RELOJ)
 
+    def _descontar_bloqueo_de_tiras(self, dt: float):
+        """Va gastando el rato muerto que dejó bajar un panel."""
+        if self._tiras_bloqueadas > 0.0:
+            self._tiras_bloqueadas = max(0.0, self._tiras_bloqueadas - dt)
+
     def _atender_tiras(self):
-        """Pasar el ratón por una de las pestañas de abajo levanta ese panel,
-        como en el género. Solo dentro del barril y con todo bajado."""
-        if not self.jugador.esta_escondido or self._hay_panel_delante():
+        """Las pestañas de abajo se usan pasándoles el ratón por encima, como
+        en el género: la misma franja levanta el panel y lo vuelve a bajar.
+
+        Hay dos seguros, y los dos son por lo mismo: las tres pestañas se
+        pisan, así que al bajar un panel el cursor se queda encima de la de
+        subir sin haberse movido.
+
+        - Usada una, la franja **entera** no vuelve a responder hasta que el
+          cursor sale de ella. Por eso el límite es el conjunto y no cada
+          pestaña por su lado.
+        - Y al bajar un panel se queda muerta TIRAS_BLOQUEO_SEGUNDOS, para
+          que ni un roce del ratón en ese medio segundo lo vuelva a levantar.
+        """
+        if self._tiras_bloqueadas > 0.0:
             return
-        if RECT_TIRA_CAMARAS.collidepoint(self.punto_luz):
-            self.sistema_camaras.activo = True
-        elif RECT_TIRA_SERVICIOS.collidepoint(self.punto_luz):
+        if not RECT_FRANJA_TIRAS.collidepoint(self.punto_luz):
+            self._tira_usada = False
+            return
+        if self._tira_usada:
+            return
+        tira = self._tira_resaltada()
+        if not tira:
+            return
+        self._tira_usada = True
+        if tira == "bajar":
+            self._bajar_paneles()
+        elif tira == "camaras":
+            self._levantar_camaras()
+        else:
             self.panel_servicios.activo = True
 
     def _elenco_en_movimiento(self):
         return self.noche.elenco_en_movimiento(self.temporizador.horas_transcurridas())
+
+    def _nombres_acechando(self):
+        return {a.nombre for a in acechando(self.noche.animatronics)}
+
+    def _sonar_pasos_de_los_que_llegan(self, acechaban):
+        """Unos pasos por cada personaje que acaba de plantarse delante.
+
+        Es el aviso de que hay alguien afuera: sin él, meterse al barril a
+        mirar las cámaras sería jugar a ciegas, porque con un panel levantado
+        no se ve el patio. Suena el paso del lado por el que apareció, para
+        que el jugador sepa hacia dónde apuntar al asomarse.
+        """
+        for animatronic in self.noche.animatronics:
+            if animatronic.esta_acechando() and animatronic.nombre not in acechaban:
+                self.audio.reproducir_efecto(self._pasos_de(animatronic))
+
+    def _quienes_se_ven(self):
+        """La cámara que el jugador tiene delante y quiénes están dentro de
+        ella ahora mismo, antes de que corra la ronda de movimiento. Devuelve
+        la cámara en None si no está mirando el monitor."""
+        if not self.sistema_camaras.activo:
+            return None, ()
+        camara = self.sistema_camaras.camara_actual
+        return camara, tuple(
+            animatronic for animatronic in self.noche.animatronics
+            if animatronic.activo and animatronic.habitacion_actual == camara
+        )
+
+    def _cortar_la_senal_de_quien_se_movio(self, vigilados):
+        """Si alguien se movió justo mientras se le estaba mirando, su cámara
+        se queda sin señal unos segundos.
+
+        Es lo que le pone precio a vigilar a alguien de cerca: se oye la
+        interferencia y se sabe que se fue, pero no hacia dónde, así que hay
+        que buscarlo por las demás cámaras en vez de seguirlo con la mirada.
+        """
+        camara, mirados = vigilados
+        if camara is None:
+            return
+        if not any(otro.habitacion_actual != camara for otro in mirados):
+            return
+        if self.sistema_camaras.perder_senal(camara):
+            self.audio.reproducir_efecto_camara(EFECTO_INTERFERENCIA)
+
+    def _reaccionar_a_lo_que_ve(self):
+        """El sobresalto de encontrarse a alguien plantado en el patio.
+
+        Suena una sola vez por encuentro, no en cada fotograma: mientras siga
+        ahí delante el jugador ya lo tiene visto. Vuelve a sonar cuando se
+        queda solo y aparece otro, o cuando sale del barril y se lo topa.
+        Dentro del barril no suena: ahí no ve el patio, y para eso están los
+        pasos.
+        """
+        tiene_a_alguien_delante = not self.jugador.esta_escondido and bool(
+            acechando_en(self.noche.animatronics, self.jugador.posicion)
+        )
+        if tiene_a_alguien_delante and not self._vio_a_alguien:
+            self.audio.reproducir_efecto(EFECTO_SORPRESA)
+        self._vio_a_alguien = tiene_a_alguien_delante
+
+    @staticmethod
+    def _pasos_de(animatronic) -> str:
+        """El lado se mide sobre la vista del Barril, que es el patio de
+        frente: sirve igual esté el jugador donde esté, incluso escondido."""
+        punto = animatronic.punto_acecho_en(POSICION_BARRIL)
+        if punto is not None and punto[0] < ANCHO_PANTALLA // 2:
+            return EFECTO_PASOS_IZQUIERDA
+        return EFECTO_PASOS_DERECHA
 
     def _murio_por_la_luz(self) -> bool:
         """Apuntarle la linterna de cerca a quien no tolera la luz es fatal.
@@ -641,18 +832,11 @@ class Juego:
         Ramón y Doña Florinda lo alcanzan ahí, y los demás únicamente si ya
         los alumbró alguna vez (ver Animatronic.puede_alcanzar_escondido).
 
-        Y a quien se quita con un objeto no se le corre el margen hasta que
-        el suelo le haya dado al jugador la respuesta al menos una vez: los
-        objetos salen por sorteo, así que sin esa tregua la noche podría
-        matarlo por una mala racha y no por algo que hiciera mal. La tregua
-        se acaba con el primer objeto que le sirva, lo haya aprovechado o
-        malgastado (ver esta_en_tregua)."""
+        No hay tregua para nadie: cada objeto está siempre en su sitio o a
+        punto de volver, así que no tener con qué responder es haberlo
+        gastado mal, no mala suerte."""
         for animatronic in self.noche.animatronics:
-            if animatronic.descontar_espera(
-                dt,
-                self.jugador.esta_escondido,
-                esta_en_tregua(animatronic, self.inventario),
-            ):
+            if animatronic.descontar_espera(dt, self.jugador.esta_escondido):
                 self._perder(animatronic.nombre, MOTIVO_ATRAPADO)
                 return True
         return False
@@ -699,7 +883,7 @@ class Juego:
             self.menu_victoria.dibujar(self.pantalla)
 
     def _dibujar_partida(self):
-        if self.sistema_camaras.activo:
+        if self.sistema_camaras.a_la_vista:
             self.sistema_camaras.dibujar(
                 self.pantalla,
                 animatronics=[a for a in self.noche.animatronics if a.activo],
@@ -714,10 +898,16 @@ class Juego:
                 self.objetos_en_suelo, self.linterna, self.punto_luz,
                 fuente=self.interfaz.fuente_camara, idiomas=self.idiomas,
             )
+            if self.objeto_en_vuelo is not None:
+                self.vista.dibujar_objeto_en_vuelo(self.pantalla, self.objeto_en_vuelo)
             if self.panel_servicios.activo:
                 self.panel_servicios.dibujar(
                     self.pantalla, self.servicios, self.punto_luz
                 )
+            # El monitor entrando o saliendo va encima de todo lo anterior:
+            # sus cuadros solo tapan lo que ocupa el aparato, así que el
+            # patio se sigue viendo alrededor mientras se mueve.
+            self.sistema_camaras.animacion.dibujar(self.pantalla)
 
         self.interfaz.dibujar_hud(
             self.pantalla, self.temporizador, self.jugador, self.linterna,
@@ -749,6 +939,8 @@ class Juego:
     def _tira_resaltada(self) -> str:
         if not self.jugador.esta_escondido:
             return ""
+        if self._hay_panel_delante():
+            return "bajar" if RECT_TIRA_BAJAR.collidepoint(self.punto_luz) else ""
         if RECT_TIRA_CAMARAS.collidepoint(self.punto_luz):
             return "camaras"
         if RECT_TIRA_SERVICIOS.collidepoint(self.punto_luz):

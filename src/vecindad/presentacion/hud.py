@@ -61,6 +61,27 @@ RECT_TIRA_CAMARAS = pygame.Rect(
     ANCHO_PANTALLA // 2 + 10, ALTO_PANTALLA - ALTO_TIRA - 8, ANCHO_TIRA, ALTO_TIRA,
 )
 
+# Pestaña para volver a bajar el panel que esté levantado. Va en el mismo
+# sitio y con la misma pinta que las dos de arriba, centrada, para que el
+# gesto de subir y el de bajar se hagan igual y en la misma franja. Se solapa
+# con ellas a propósito; que no se disparen entre sí lo resuelve el seguro de
+# Juego._atender_tiras, que exige sacar el cursor de la franja entre un gesto
+# y el siguiente.
+RECT_TIRA_BAJAR = pygame.Rect(
+    ANCHO_PANTALLA // 2 - ANCHO_TIRA // 2, ALTO_PANTALLA - ALTO_TIRA - 8,
+    ANCHO_TIRA, ALTO_TIRA,
+)
+
+# Todo lo que ocupan las pestañas juntas. Es la zona de la que hay que sacar
+# el cursor para que la franja vuelva a responder: como las tres se pisan, el
+# límite tiene que ser el conjunto y no cada una por su lado.
+RECT_FRANJA_TIRAS = RECT_TIRA_SERVICIOS.union(RECT_TIRA_CAMARAS).union(RECT_TIRA_BAJAR)
+
+# Con un panel levantado, la franja de abajo la ocupa la pestaña de bajar,
+# así que la línea de ayuda sube por encima del botón de audio, sobre la
+# imagen de la cámara.
+Y_AYUDA_EN_PANEL = 580
+
 COLOR_FONDO_RANURA = (0, 0, 0, 140)
 COLOR_TIRA = (0, 0, 0, 150)
 COLOR_TIRA_RESALTADA = (235, 225, 180, 225)
@@ -120,7 +141,9 @@ class InterfazJuego:
         if not jugador.esta_escondido:
             self._dibujar_inventario(superficie, inventario)
         self._dibujar_peticion(superficie, estado)
-        if jugador.esta_escondido and not en_panel:
+        if en_panel:
+            self._dibujar_tira_bajar(superficie, estado)
+        elif jugador.esta_escondido:
             self._dibujar_tiras(superficie, estado)
         self._dibujar_ayuda(superficie, jugador, estado)
 
@@ -167,11 +190,24 @@ class InterfazJuego:
             (RECT_TIRA_SERVICIOS, "tira_servicios", estado.tira_resaltada == "servicios"),
             (RECT_TIRA_CAMARAS, "tira_camaras", estado.tira_resaltada == "camaras"),
         ):
-            self._pintar(superficie, rect, COLOR_TIRA_RESALTADA if resaltada else COLOR_TIRA)
-            pygame.draw.rect(superficie, COLOR_GRIS, rect, width=1)
-            color = COLOR_NEGRO if resaltada else COLOR_BLANCO
-            texto = self.fuente_camara.render(self.idiomas.t(clave), True, color)
-            superficie.blit(texto, texto.get_rect(center=rect.center))
+            self._dibujar_tira(superficie, rect, clave, resaltada)
+
+    def _dibujar_tira_bajar(self, superficie: pygame.Surface, estado: "EstadoHud"):
+        """La pestaña de volver a bajar el panel, con la misma pinta y el
+        mismo gesto que las del barril: basta pasarle el ratón por encima.
+        El clic y la tecla siguen funcionando."""
+        self._dibujar_tira(
+            superficie, RECT_TIRA_BAJAR, "tira_bajar",
+            estado.tira_resaltada == "bajar",
+        )
+
+    def _dibujar_tira(self, superficie: pygame.Surface, rect: pygame.Rect,
+                      clave: str, resaltada: bool):
+        self._pintar(superficie, rect, COLOR_TIRA_RESALTADA if resaltada else COLOR_TIRA)
+        pygame.draw.rect(superficie, COLOR_GRIS, rect, width=1)
+        color = COLOR_NEGRO if resaltada else COLOR_BLANCO
+        texto = self.fuente_camara.render(self.idiomas.t(clave), True, color)
+        superficie.blit(texto, texto.get_rect(center=rect.center))
 
     @staticmethod
     def _pintar(superficie: pygame.Surface, rect: pygame.Rect, color):
@@ -222,17 +258,18 @@ class InterfazJuego:
                 texto, texto.get_rect(center=(ANCHO_PANTALLA // 2, 60))
             )
 
+        y = ALTO_PANTALLA - 24
         if estado.en_camaras:
-            clave = "ayuda_camaras"
+            clave, y = "ayuda_camaras", Y_AYUDA_EN_PANEL
         elif estado.en_servicios:
-            clave = "ayuda_servicios"
+            clave, y = "ayuda_servicios", Y_AYUDA_EN_PANEL
         elif jugador.esta_escondido:
             return  # las pestañas ya dicen lo que hay que hacer
         else:
             clave = "ayuda_patio"
         texto_ayuda = self.fuente_camara.render(self.idiomas.t(clave), True, COLOR_GRIS)
         superficie.blit(
-            texto_ayuda, texto_ayuda.get_rect(center=(ANCHO_PANTALLA // 2, ALTO_PANTALLA - 24))
+            texto_ayuda, texto_ayuda.get_rect(center=(ANCHO_PANTALLA // 2, y))
         )
 
     def dibujar_game_over(self, superficie: pygame.Surface, nombre_animatronic: str,

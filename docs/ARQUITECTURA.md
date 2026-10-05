@@ -90,13 +90,15 @@ dominio/
 │   ├── entidad.py        su estado vivo y la IA 0-20
 │   ├── elenco.py         las siete fichas concretas + validación
 │   ├── progresion.py     qué nivel tiene cada uno en cada noche
-│   └── enfrentamiento.py cara a cara: luz mortal y objetos arrojados
+│   └── enfrentamiento.py cara a cara: luz mortal y a quién le da un objeto
 ├── jugador.py            por dónde se mueve dentro del hub
 ├── linterna.py           batería y haz de luz
 ├── inventario.py         lo que carga encima y el café
-├── objetos.py            catálogo y lo que aparece en el suelo
+├── objetos.py            catálogo y el sitio fijo de cada objeto en el suelo
+├── arrojo.py             el objeto arrojado mientras va por el aire
 ├── servicios.py          los cuatro servicios del barril
 ├── sabotaje.py           El Chavo arruinando las cámaras
+├── interferencia.py      cámaras sin señal al moverse alguien delante
 └── temporizador.py       el reloj y los ticks que mueven al elenco
 ```
 
@@ -151,6 +153,7 @@ presentacion/
 │   ├── principal.py      MenuPrincipal, que junta lo anterior
 │   └── pausa.py          MenuPausa, con los mismos Ajustes que el principal
 ├── camaras.py            el monitor a pantalla completa
+├── animacion_monitor.py  el monitor entrando y saliendo de la vista
 ├── mapa_camaras.py       el mapa que hace de selector de cámara
 ├── vista.py              lo que el jugador ve, con la linterna
 ├── hud.py                noche, hora, batería, inventario, finales
@@ -212,7 +215,7 @@ empaquetado.
 |---|---|
 | Un personaje nuevo | Añadir su nombre a `nombres.py`, su ficha a `elenco.py` y sus niveles a `progresion.py` |
 | Una cámara nueva | `mundo/habitaciones.py` + su carpeta en `assets/camaras/` + su recuadro en `presentacion/mapa_camaras.py` |
-| Un objeto nuevo | `dominio/objetos.py` (catálogo y a quién elimina) + su celda en la hoja de iconos |
+| Un objeto nuevo | `dominio/objetos.py` (catálogo, a quién elimina y su `punto_suelo`) + su celda en la hoja de iconos |
 | Un idioma nuevo | Un módulo en `i18n/textos/` y registrarlo en su `__init__.py` |
 | Cambiar los controles | `app/entrada.py`, y solo ahí |
 | Equilibrar la dificultad | `config/jugabilidad.py` y `dominio/animatronicos/progresion.py` |

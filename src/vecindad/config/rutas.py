@@ -29,6 +29,11 @@ DIR_ASSETS_ANIMATRONICS = DIR_ASSETS / "animatronics"
 DIR_ASSETS_UI = DIR_ASSETS / "ui"
 DIR_ASSETS_MENU = DIR_ASSETS / "menu"
 DIR_ASSETS_FUENTES = DIR_ASSETS / "fuentes"
+DIR_ASSETS_LOGO = DIR_ASSETS / "logo"
+
+# Icono de la ventana. Es el mismo logo que lleva el .exe (ver vecindad.spec):
+# si se cambia el archivo hay que cambiarlo en los dos sitios.
+ARCHIVO_ICONO = DIR_ASSETS_LOGO / "Vecindad Macabra bajo la Luna.png"
 # assets/ui/ guarda además los fondos de las posiciones donde se para el
 # jugador durante la noche (ver mundo/posiciones.py).
 
@@ -41,6 +46,12 @@ ARCHIVO_MENU_TITULO = DIR_ASSETS_MENU / "titulo.png"
 # patrón "fondo <n>.png" (fondo 2.png, fondo 3.png...) se toma como variante,
 # así se pueden agregar o quitar sin tocar código.
 PATRON_MENU_FONDO_VARIANTES = "fondo *.png"
+
+# Cuadros de la animación de encender el monitor de cámaras, en assets/camaras/
+# y numerados desde 1 ("pos 1.png", "pos 2.png"...). Se leen en orden hasta el
+# primero que falte, así que se pueden agregar o quitar cuadros sin tocar
+# código; si no hay ninguno, el panel se abre sin animación.
+PATRON_CAMARAS_ENCENDIDO = "pos {numero}.png"
 
 # --- Audio ---
 # El modo streamer decide de cuál de estas dos carpetas se lee TODO el audio

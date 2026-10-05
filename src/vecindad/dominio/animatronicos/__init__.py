@@ -35,8 +35,8 @@ from .enfrentamiento import (
     acechando_en,
     detectar_luz_mortal,
     detectar_luz_que_descarga,
-    esta_en_tregua,
     iluminados_en,
+    objetivo_del_arrojo,
     resolver_arrojo,
 )
 from .entidad import Animatronic, limitar_nivel_ia
@@ -72,7 +72,6 @@ __all__ = [
     "crear_elenco_personalizado",
     "detectar_luz_mortal",
     "detectar_luz_que_descarga",
-    "esta_en_tregua",
     "habitaciones_posibles",
     "habitaciones_que_se_dibujan",
     "hora_de_arranque",
@@ -82,8 +81,8 @@ __all__ = [
     "nombres_del_elenco",
     "nombres_reconocidos_en_escenas",
     "niveles_iniciales_personalizada",
+    "objetivo_del_arrojo",
     "prefijos_por_nombre",
     "resolver_arrojo",
-    "tiene_respuesta_para",
     "validar_elenco",
 ]

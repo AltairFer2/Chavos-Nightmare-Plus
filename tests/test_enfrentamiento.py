@@ -1,25 +1,32 @@
-"""Cara a cara con el jugador: quién acecha, a quién alumbra la linterna y
-qué pasa al arrojarle un objeto."""
+"""Cara a cara con el jugador: quién acecha, a quién alumbra la linterna, a
+quién le da un objeto arrojado y qué le hace."""
+
+from dataclasses import replace
 
 import pytest
 
 from conftest import crear, llevar_a_acechar
-from vecindad.config.jugabilidad import LINTERNA_RADIO, SEGUNDOS_RETRASO_CHURRUMINO
+from vecindad.config.jugabilidad import (
+    ALTURA_TORSO,
+    ARROJO_ACIERTO_SEMIALTO,
+    ARROJO_ACIERTO_SEMIANCHO,
+    LINTERNA_RADIO,
+    SEGUNDOS_RETRASO_CHURRUMINO,
+)
 from vecindad.dominio.animatronicos import (
     ELENCO,
+    NIVELES_POR_NOCHE,
     Animatronic,
     acechando_en,
     detectar_luz_mortal,
     detectar_luz_que_descarga,
-    esta_en_tregua,
     iluminados_en,
     nombres,
+    objetivo_del_arrojo,
     resolver_arrojo,
 )
-from vecindad.dominio.inventario import Inventario
 from vecindad.dominio.objetos import (
     ID_BALERO,
-    ID_CAFE,
     ID_CAFE_CHURRUMINO,
     ID_CHURRUMINO,
     ID_PALETA,
@@ -28,6 +35,11 @@ from vecindad.dominio.objetos import (
     OBJETOS_DEFENSIVOS,
 )
 from vecindad.mundo.posiciones import POSICION_BARRIL, POSICION_LAVADEROS
+
+# El nivel más alto que alcanza alguien en las seis noches de la campaña.
+NIVEL_MAS_ALTO_DE_CAMPANA = max(
+    nivel for niveles in NIVELES_POR_NOCHE.values() for nivel in niveles.values()
+)
 
 
 @pytest.fixture
@@ -120,7 +132,7 @@ class TestLaLuzSobreLaChilindrina:
 
     @pytest.mark.parametrize("id_objeto", [ID_PALETA, ID_BALERO])
     def test_se_va_con_la_paleta_o_con_el_balero(self, chilindrina_acechando, id_objeto):
-        resultado = resolver_arrojo([chilindrina_acechando], id_objeto, set())
+        resultado = resolver_arrojo(chilindrina_acechando, id_objeto, iluminado=False)
         assert resultado.eliminado is chilindrina_acechando
 
 
@@ -131,7 +143,7 @@ class TestQuicoSeVaConLaPelota:
 
     @pytest.mark.parametrize("id_objeto", [ID_PELOTA_CUADRADA, ID_PELOTA_REDONDA])
     def test_se_va_con_su_pelota_sin_alumbrarlo(self, quico_acechando, id_objeto):
-        resultado = resolver_arrojo([quico_acechando], id_objeto, iluminados=set())
+        resultado = resolver_arrojo(quico_acechando, id_objeto, iluminado=False)
         assert resultado.eliminado is quico_acechando
         assert not quico_acechando.esta_acechando()
 
@@ -142,106 +154,8 @@ class TestQuicoSeVaConLaPelota:
     def test_los_objetos_que_no_son_suyos_siguen_sin_servir(self, quico_acechando):
         """Que se pueda a oscuras no significa que valga cualquier cosa: la
         paleta es de La Chilindrina."""
-        resultado = resolver_arrojo([quico_acechando], ID_PALETA, iluminados=set())
+        resultado = resolver_arrojo(quico_acechando, ID_PALETA, iluminado=False)
         assert resultado.eliminado is None
-        assert quico_acechando.esta_acechando()
-
-
-class TestLaTreguaDelPrincipio:
-    """A quien se quita con un objeto no se le corre el margen de ataque
-    hasta que el suelo le haya dado esa respuesta al jugador una primera vez.
-
-    Los objetos salen por sorteo, así que sin esta tregua la noche podía
-    matar por una mala racha del suelo y no por un error del jugador: verlo
-    delante, no tener nada que arrojarle y no poder hacer absolutamente nada.
-    Es un respiro de arranque, no un escudo permanente.
-    """
-
-    @pytest.fixture
-    def sin_nada(self):
-        return Inventario()
-
-    def test_quico_no_ataca_mientras_no_aparezca_la_pelota(self, quico_acechando, sin_nada):
-        assert esta_en_tregua(quico_acechando, sin_nada)
-        assert not quico_acechando.descontar_espera(999.0, en_tregua=True)
-
-    def test_con_la_pelota_encima_vuelve_a_ser_peligroso(self, quico_acechando, sin_nada):
-        sin_nada.guardar(ID_PELOTA_REDONDA)
-        assert not esta_en_tregua(quico_acechando, sin_nada)
-        assert quico_acechando.descontar_espera(999.0, en_tregua=False)
-
-    def test_le_sirve_cualquiera_de_sus_dos_pelotas(self, quico_acechando, sin_nada):
-        sin_nada.guardar(ID_PELOTA_CUADRADA)
-        assert not esta_en_tregua(quico_acechando, sin_nada)
-
-    def test_un_objeto_ajeno_no_le_quita_la_tregua(self, quico_acechando, sin_nada):
-        """Recoger la paleta no despierta a Quico: no es lo suyo."""
-        sin_nada.guardar(ID_PALETA)
-        assert esta_en_tregua(quico_acechando, sin_nada)
-
-    def test_gastar_su_pelota_con_otro_ya_no_devuelve_la_tregua(
-        self, quico_acechando, sin_nada
-    ):
-        """El caso que hay que castigar: tuvo la pelota y se la tiró a quien
-        no era. Se quedó sin nada, pero la respuesta existió y la desperdició,
-        así que Quico lo mata igual."""
-        sin_nada.guardar(ID_PELOTA_REDONDA)
-        sin_nada.gastar(ID_PELOTA_REDONDA)
-        assert not sin_nada.tiene(ID_PELOTA_REDONDA)
-        assert esta_en_tregua(quico_acechando, sin_nada) is False
-        assert quico_acechando.descontar_espera(999.0, en_tregua=False)
-
-    def test_encontrar_la_otra_pelota_le_devuelve_la_oportunidad(
-        self, quico_acechando, sin_nada
-    ):
-        """Sin tregua sigue siendo mortal, pero con un objeto nuevo el
-        jugador vuelve a tener con qué salvarse."""
-        sin_nada.guardar(ID_PELOTA_REDONDA)
-        sin_nada.gastar(ID_PELOTA_REDONDA)
-        sin_nada.guardar(ID_PELOTA_CUADRADA)
-        assert not esta_en_tregua(quico_acechando, sin_nada)
-        resultado = resolver_arrojo([quico_acechando], ID_PELOTA_CUADRADA, set())
-        assert resultado.eliminado is quico_acechando
-
-    @pytest.mark.parametrize("nombre", [nombres.DON_RAMON, nombres.FLORINDA])
-    def test_los_que_no_se_quitan_con_objetos_nunca_estan_en_tregua(self, nombre, sin_nada):
-        """Su respuesta está en el panel del barril (el Sr. Barriga y el
-        audio), que no depende de la suerte del suelo. Si la tregua los
-        alcanzara, serían inofensivos toda la noche."""
-        llegado = llevar_a_acechar(crear(nombre, nivel_ia=10))
-        assert not esta_en_tregua(llegado, sin_nada)
-
-    def test_a_jaimico_le_basta_con_que_pueda_preparar_el_cafe(self, sin_nada):
-        """Todavía no lo ha combinado, pero tiene los dos ingredientes: eso
-        ya es una respuesta, solo le falta pulsar la tecla."""
-        jaimico = llevar_a_acechar(crear(nombres.JAIMICO, nivel_ia=10))
-        assert esta_en_tregua(jaimico, sin_nada)
-        sin_nada.guardar(ID_CAFE)
-        sin_nada.guardar(ID_CHURRUMINO)
-        assert not esta_en_tregua(jaimico, sin_nada)
-
-    def test_a_clotilde_solo_le_vale_lo_que_pidio(self, sin_nada):
-        clotilde = llevar_a_acechar(crear(nombres.CLOTILDE, nivel_ia=10))
-        clotilde.objeto_pedido = ID_PALETA
-        sin_nada.guardar(ID_BALERO)
-        assert esta_en_tregua(clotilde, sin_nada)
-        sin_nada.guardar(ID_PALETA)
-        assert not esta_en_tregua(clotilde, sin_nada)
-
-    @pytest.mark.parametrize("config", ELENCO, ids=lambda c: c.nombre)
-    def test_con_el_suelo_entero_encima_nadie_queda_en_tregua(self, config):
-        """Con todo lo que da la noche en la mochila, la vecindad entera
-        vuelve a ser peligrosa."""
-        llegado = llevar_a_acechar(Animatronic(config, nivel_ia=10))
-        inventario = Inventario()
-        for id_objeto in OBJETOS_DEFENSIVOS:
-            inventario.guardar(id_objeto)
-        inventario.guardar(ID_CAFE)
-        assert not esta_en_tregua(llegado, inventario)
-
-    def test_la_tregua_no_lo_quita_de_delante(self, quico_acechando):
-        """Sigue ahí, mirando: lo que no puede es matar."""
-        quico_acechando.descontar_espera(999.0, en_tregua=True)
         assert quico_acechando.esta_acechando()
 
 
@@ -292,9 +206,7 @@ class TestLuzMortal:
 
 class TestArrojarObjetos:
     def test_la_pelota_cuadrada_ahuyenta_a_quico_si_esta_alumbrado(self, quico_acechando):
-        resultado = resolver_arrojo(
-            [quico_acechando], ID_PELOTA_CUADRADA, {nombres.QUICO}
-        )
+        resultado = resolver_arrojo(quico_acechando, ID_PELOTA_CUADRADA, iluminado=True)
         assert resultado.eliminado is quico_acechando
         assert not quico_acechando.esta_acechando()
 
@@ -302,49 +214,141 @@ class TestArrojarObjetos:
         """A él sí hay que alumbrarlo: es su regla, y la luz no le hace daño,
         así que su contramedida sí se puede completar."""
         jaimico = llevar_a_acechar(crear(nombres.JAIMICO, nivel_ia=10))
-        resultado = resolver_arrojo([jaimico], ID_CAFE_CHURRUMINO, set())
+        resultado = resolver_arrojo(jaimico, ID_CAFE_CHURRUMINO, iluminado=False)
         assert resultado.eliminado is None
         assert jaimico.esta_acechando()
 
     def test_el_balero_se_lleva_al_chavo_sin_necesidad_de_luz(self, chavo_acechando):
-        resultado = resolver_arrojo([chavo_acechando], ID_BALERO, set())
+        resultado = resolver_arrojo(chavo_acechando, ID_BALERO, iluminado=False)
         assert resultado.eliminado is chavo_acechando
 
     def test_el_churrumino_solo_entretiene_al_chavo(self, chavo_acechando):
         margen = chavo_acechando.segundos_para_atacar
-        resultado = resolver_arrojo([chavo_acechando], ID_CHURRUMINO, set())
+        resultado = resolver_arrojo(chavo_acechando, ID_CHURRUMINO, iluminado=False)
         assert resultado.eliminado is None
         assert resultado.retrasado is chavo_acechando
         assert chavo_acechando.segundos_para_atacar == pytest.approx(
             margen + SEGUNDOS_RETRASO_CHURRUMINO
         )
 
-    def test_el_churrumino_sin_el_chavo_delante_se_pierde(self, quico_acechando):
-        resultado = resolver_arrojo([quico_acechando], ID_CHURRUMINO, set())
+    def test_el_churrumino_a_otro_que_no_sea_el_chavo_se_pierde(self, quico_acechando):
+        resultado = resolver_arrojo(quico_acechando, ID_CHURRUMINO, iluminado=False)
         assert not resultado.sirvio
+        assert resultado.alcanzado is quico_acechando
 
     def test_arrojar_el_objeto_equivocado_no_sirve_de_nada(self, quico_acechando):
-        resultado = resolver_arrojo(
-            [quico_acechando], ID_CAFE_CHURRUMINO, {nombres.QUICO}
-        )
+        resultado = resolver_arrojo(quico_acechando, ID_CAFE_CHURRUMINO, iluminado=True)
         assert not resultado.sirvio
         assert quico_acechando.esta_acechando()
 
-    def test_arrojar_sin_nadie_delante_no_falla(self):
-        assert not resolver_arrojo([], ID_BALERO, set()).sirvio
+    def test_si_no_le_dio_a_nadie_no_pasa_nada(self):
+        resultado = resolver_arrojo(None, ID_BALERO, iluminado=False)
+        assert not resultado.sirvio
+        assert resultado.alcanzado is None
+
+    def test_a_jaimico_alumbrado_su_cafe_si_le_sirve(self):
+        jaimico = llevar_a_acechar(crear(nombres.JAIMICO, nivel_ia=10))
+        resultado = resolver_arrojo(jaimico, ID_CAFE_CHURRUMINO, iluminado=True)
+        assert resultado.eliminado is jaimico
 
     @pytest.mark.parametrize("id_objeto", OBJETOS_DEFENSIVOS)
     def test_clotilde_se_va_con_lo_que_haya_pedido(self, id_objeto):
         clotilde = llevar_a_acechar(crear(nombres.CLOTILDE, nivel_ia=10))
         clotilde.objeto_pedido = id_objeto
-        resultado = resolver_arrojo([clotilde], id_objeto, set())
+        resultado = resolver_arrojo(clotilde, id_objeto, iluminado=False)
         assert resultado.eliminado is clotilde
 
-    def test_clotilde_tiene_prioridad_sobre_el_resto(self, chavo_acechando):
-        """Si pidió el balero, se lo lleva ella aunque El Chavo también caiga
-        con ese objeto: va dirigido a quien lo pidió."""
+    def test_a_clotilde_no_le_vale_otra_cosa(self):
         clotilde = llevar_a_acechar(crear(nombres.CLOTILDE, nivel_ia=10))
-        clotilde.objeto_pedido = ID_BALERO
-        resultado = resolver_arrojo([clotilde, chavo_acechando], ID_BALERO, set())
-        assert resultado.eliminado is clotilde
-        assert chavo_acechando.esta_acechando()
+        clotilde.objeto_pedido = ID_PALETA
+        resultado = resolver_arrojo(clotilde, ID_BALERO, iluminado=False)
+        assert not resultado.sirvio
+        assert clotilde.esta_acechando()
+
+
+def _con_torso_en(configuracion, torso):
+    """Copia de la ficha con el torso, visto desde el Barril, en ese punto."""
+    puntos = dict(configuracion.puntos_acecho)
+    puntos[POSICION_BARRIL] = (torso[0], torso[1] + ALTURA_TORSO)
+    return replace(configuracion, puntos_acecho=puntos)
+
+
+class TestPunteria:
+    """El objeto va adonde apunta el ratón y solo le da a quien tenga el
+    torso cerca. Ya no basta con pulsar el número correcto."""
+
+    def test_apuntarle_al_torso_le_da(self, quico_acechando):
+        torso = quico_acechando.punto_torso_en(POSICION_BARRIL)
+        assert objetivo_del_arrojo([quico_acechando], POSICION_BARRIL, torso) is quico_acechando
+
+    def test_justo_dentro_de_la_elipse_le_da(self, quico_acechando):
+        x, y = quico_acechando.punto_torso_en(POSICION_BARRIL)
+        semiancho, semialto = quico_acechando.semiejes_acierto()
+        for borde in ((x + semiancho - 1, y), (x, y - semialto + 1), (x, y + semialto - 1)):
+            assert objetivo_del_arrojo(
+                [quico_acechando], POSICION_BARRIL, borde
+            ) is quico_acechando, borde
+
+    def test_fuera_de_la_elipse_falla(self, quico_acechando):
+        x, y = quico_acechando.punto_torso_en(POSICION_BARRIL)
+        semiancho, semialto = quico_acechando.semiejes_acierto()
+        for lejos in ((x + semiancho + 1, y), (x, y - semialto - 1)):
+            assert objetivo_del_arrojo([quico_acechando], POSICION_BARRIL, lejos) is None, lejos
+
+    @pytest.mark.parametrize("config", ELENCO, ids=lambda c: c.nombre)
+    def test_apuntarle_a_la_cara_le_da(self, config):
+        """Este era el fallo: con un círculo de pecho, apuntar a la cara de
+        La Chilindrina fallaba, y es donde el jugador apunta sin pensarlo.
+        Se mide con el nivel más alto de la campaña."""
+        llegado = llevar_a_acechar(Animatronic(config, nivel_ia=NIVEL_MAS_ALTO_DE_CAMPANA))
+        for vista in (POSICION_BARRIL, POSICION_LAVADEROS):
+            x, y = llegado.punto_torso_en(vista)
+            cara = (x, y - int(ALTURA_TORSO * 0.6))
+            assert objetivo_del_arrojo([llegado], vista, cara) is llegado, vista
+
+    def test_sin_nadie_delante_no_le_da_a_nadie(self):
+        assert objetivo_del_arrojo([], POSICION_BARRIL, (640, 360)) is None
+
+    def test_a_quien_viene_de_camino_no_se_le_puede_dar(self):
+        lejano = crear(nombres.QUICO, nivel_ia=10)
+        torso = lejano.punto_torso_en(POSICION_BARRIL)
+        assert objetivo_del_arrojo([lejano], POSICION_BARRIL, torso) is None
+
+    def test_sin_punto_de_mira_no_le_da_a_nadie(self, quico_acechando):
+        assert objetivo_del_arrojo([quico_acechando], POSICION_BARRIL, None) is None
+
+    def test_se_apunta_igual_desde_los_lavaderos(self, quico_acechando):
+        torso = quico_acechando.punto_torso_en(POSICION_LAVADEROS)
+        assert objetivo_del_arrojo(
+            [quico_acechando], POSICION_LAVADEROS, torso
+        ) is quico_acechando
+
+    def test_si_dos_se_pisan_le_da_al_mas_cercano(self, quico_acechando, chavo_acechando):
+        """El objeto va a una sola persona: a la que se apuntó."""
+        x, y = chavo_acechando.punto_torso_en(POSICION_BARRIL)
+        quico_acechando.configuracion = _con_torso_en(
+            quico_acechando.configuracion, (x + 40, y)
+        )
+        presentes = [quico_acechando, chavo_acechando]
+        assert objetivo_del_arrojo(presentes, POSICION_BARRIL, (x, y)) is chavo_acechando
+        assert objetivo_del_arrojo(presentes, POSICION_BARRIL, (x + 35, y)) is quico_acechando
+
+    def test_a_nivel_alto_hay_que_afinar_mas(self):
+        facil = crear(nombres.QUICO, nivel_ia=1)
+        dificil = crear(nombres.QUICO, nivel_ia=20)
+        assert facil.semiejes_acierto() == (ARROJO_ACIERTO_SEMIANCHO, ARROJO_ACIERTO_SEMIALTO)
+        assert dificil.semiejes_acierto()[0] < ARROJO_ACIERTO_SEMIANCHO
+        assert dificil.semiejes_acierto()[1] < ARROJO_ACIERTO_SEMIALTO
+
+    def test_tirarle_al_que_no_era_no_alcanza_al_de_atras(self, quico_acechando):
+        """Si el tiro le cae a quien no le sirve, se pierde: no rebota hacia
+        quien sí lo necesitaba."""
+        chilindrina = llevar_a_acechar(crear(nombres.CHILINDRINA, nivel_ia=10))
+        torso_quico = quico_acechando.punto_torso_en(POSICION_BARRIL)
+        alcanzado = objetivo_del_arrojo(
+            [quico_acechando, chilindrina], POSICION_BARRIL, torso_quico
+        )
+        resultado = resolver_arrojo(alcanzado, ID_PALETA, iluminado=False)
+        assert alcanzado is quico_acechando
+        assert not resultado.sirvio
+        assert chilindrina.esta_acechando()

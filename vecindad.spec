@@ -55,5 +55,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon="assets/ui/icono.ico",  # descomentar cuando exista el icono
+    # Es un PNG: PyInstaller lo convierte a .ico por su cuenta si Pillow
+    # está instalado (pip install pillow). El mismo logo es el icono de la
+    # ventana (config/rutas.py, ARCHIVO_ICONO).
+    icon="assets/logo/Vecindad Macabra bajo la Luna.png",
 )

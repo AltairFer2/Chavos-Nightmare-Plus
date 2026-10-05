@@ -17,6 +17,9 @@ from typing import Optional, Sequence, Tuple
 
 from ...config.jugabilidad import (
     ALTURA_TORSO,
+    ARROJO_ACIERTO_ESCALA_MINIMA,
+    ARROJO_ACIERTO_SEMIALTO,
+    ARROJO_ACIERTO_SEMIANCHO,
     LUZ_RADIO_PELIGRO_MAXIMO,
     LUZ_RADIO_PELIGRO_MINIMO,
 )
@@ -131,28 +134,16 @@ class Animatronic:
         if self.esta_acechando():
             self.activado = True
 
-    def descontar_espera(
-        self,
-        dt: float,
-        jugador_escondido: bool = False,
-        en_tregua: bool = False,
-    ) -> bool:
+    def descontar_espera(self, dt: float, jugador_escondido: bool = False) -> bool:
         """Consume el margen que le queda al jugador para reaccionar.
         Devuelve True el fotograma en que el personaje ataca.
 
         Escondido en el barril el margen ni siquiera corre para quien no
         puede alcanzarle ahí: el jugador está a salvo de ese, no contra
-        reloj.
-
-        Tampoco corre mientras dure la tregua, que es el rato del principio
-        en que el suelo todavía no le ha dado al jugador con qué responderle
-        (ver enfrentamiento.esta_en_tregua). Se rompe con el primer objeto
-        que le sirva, la haya usado bien o mal."""
+        reloj."""
         if not self.activo or not self.esta_acechando():
             return False
         if jugador_escondido and not self.puede_alcanzar_escondido():
-            return False
-        if en_tregua:
             return False
         self.segundos_para_atacar -= dt
         return self.segundos_para_atacar <= 0.0
@@ -218,6 +209,16 @@ class Animatronic:
             return 0
         rango = LUZ_RADIO_PELIGRO_MAXIMO - LUZ_RADIO_PELIGRO_MINIMO
         return int(LUZ_RADIO_PELIGRO_MINIMO + rango * self._factor_ia())
+
+    def semiejes_acierto(self) -> Tuple[int, int]:
+        """Medio ancho y medio alto de la elipse, centrada en el torso, dentro
+        de la cual un objeto arrojado le da. Se encoge con el nivel_ia:
+        cuanto más alto, más fina la puntería."""
+        escala = 1.0 - (1.0 - ARROJO_ACIERTO_ESCALA_MINIMA) * self._factor_ia()
+        return (
+            int(ARROJO_ACIERTO_SEMIANCHO * escala),
+            int(ARROJO_ACIERTO_SEMIALTO * escala),
+        )
 
     def _factor_ia(self) -> float:
         """Posición del nivel_ia dentro de su rango útil (1-20), de 0.0 a 1.0."""

@@ -8,6 +8,7 @@ que ya trae puestas al empezar en las primeras noches.
 
 from ..config.jugabilidad import (
     BATERIAS_INICIALES_EN_BARRIL,
+    LINTERNA_BATERIAS_MAXIMAS,
     LINTERNA_DURACION_BATERIA_SEGUNDOS,
     LINTERNA_RADIO,
     NOCHE_SIN_BATERIAS_FIJAS,
@@ -65,8 +66,19 @@ class Linterna:
         self.carga = 0.0
         self.encendida = False
 
-    def guardar_bateria(self):
+    @property
+    def baterias_llenas(self) -> bool:
+        """Si ya no le cabe otro repuesto en el bolsillo."""
+        return self.baterias_repuesto >= LINTERNA_BATERIAS_MAXIMAS
+
+    def guardar_bateria(self) -> bool:
+        """Guarda un repuesto. False si el bolsillo ya está lleno: el tope
+        existe para que acaparar baterías no sea una estrategia, y para que
+        el suelo siga ofreciendo lo que de verdad hace falta."""
+        if self.baterias_llenas:
+            return False
         self.baterias_repuesto += 1
+        return True
 
     def cambiar_bateria(self) -> bool:
         """Pone una batería de repuesto. Devuelve False si no hay repuestos o

@@ -1,6 +1,6 @@
 """Lo que ocurre cuando el jugador y un animatrónico se encuentran cara a
 cara: a quién tiene delante, a quién está alumbrando, a quién mata la luz y
-qué pasa al arrojarle un objeto.
+a quién le da un objeto arrojado y qué le hace.
 
 Estar delante del jugador es estar en el Primer Patio, y punto: el Barril y
 los Lavaderos son dos ángulos del mismo sitio, así que desde los dos se ve a
@@ -17,7 +17,7 @@ from typing import List, Optional
 
 from ...config.jugabilidad import SEGUNDOS_RETRASO_CHURRUMINO
 from ..linterna import esta_iluminado
-from ..objetos import ID_CHURRUMINO, objetos_que_ahuyentan_a, obtener_objeto
+from ..objetos import ID_CHURRUMINO, obtener_objeto
 from . import nombres
 from .entidad import Animatronic
 
@@ -92,48 +92,37 @@ def detectar_luz_que_descarga(animatronics, id_posicion: str, punto_luz):
     )
 
 
-def _respuestas_posibles(animatronic: Animatronic):
-    """Los objetos con los que este personaje se quita de encima ahora mismo.
+def objetivo_del_arrojo(animatronics, id_posicion: str, punto_mira):
+    """A quién le da un objeto arrojado hacia `punto_mira`, o None si no le
+    da a nadie.
 
-    A Doña Clotilde solo le sirve lo que haya pedido: es la única a la que no
-    le vale cualquier objeto de su lista.
+    Le da a quien tenga el punto dentro de su elipse de acierto (ver
+    Animatronic.semiejes_acierto). Si dos se pisan, a aquel en cuyo centro
+    caiga más de lleno: el objeto va a una sola persona.
     """
-    if animatronic.objeto_pedido is not None:
-        return (animatronic.objeto_pedido,)
-    return objetos_que_ahuyentan_a(animatronic.nombre)
-
-
-def esta_en_tregua(animatronic: Animatronic, inventario) -> bool:
-    """Si todavía no puede matar al jugador porque el suelo no le ha dado la
-    respuesta ni una sola vez en toda la noche.
-
-    Mientras sea True, ese personaje no descuenta el margen de ataque (ver
-    Animatronic.descontar_espera): se planta delante y mete miedo, pero no
-    mata. Es un seguro contra perder por una mala racha del sorteo del suelo,
-    no un escudo:
-
-    - La tregua se rompe en cuanto el objeto le pasa por las manos, y ya no
-      vuelve. Si lo desperdició tirándoselo a quien no era, el personaje lo
-      mata igual aunque el jugador se haya quedado sin nada: la respuesta
-      existió y la gastó mal.
-    - Quien no se contrarresta con objetos (Don Ramón con el Sr. Barriga,
-      Doña Florinda con el audio) nunca está en tregua: su respuesta está en
-      el panel del barril y no depende de la suerte.
-    """
-    opciones = _respuestas_posibles(animatronic)
-    if not opciones:
-        return False
-    return not any(
-        inventario.puede_usar(id_objeto) or inventario.tuvo(id_objeto)
-        for id_objeto in opciones
-    )
+    if punto_mira is None:
+        return None
+    x, y = punto_mira
+    mas_cerca = None
+    menor_distancia = None
+    for animatronic in acechando_en(animatronics, id_posicion):
+        torso = animatronic.punto_torso_en(id_posicion)
+        semiancho, semialto = animatronic.semiejes_acierto()
+        # 0 en el torso, 1 justo en el borde de la elipse.
+        distancia = ((x - torso[0]) / semiancho) ** 2 + ((y - torso[1]) / semialto) ** 2
+        if distancia > 1.0:
+            continue
+        if menor_distancia is None or distancia < menor_distancia:
+            mas_cerca, menor_distancia = animatronic, distancia
+    return mas_cerca
 
 
 @dataclass
 class ResultadoArrojo:
-    """Qué pasó al arrojar un objeto: a quién se llevó por delante y a quién
-    solo entretuvo."""
+    """Qué pasó al arrojar un objeto: a quién le dio, y si a ese se lo llevó
+    por delante o solo lo entretuvo."""
 
+    alcanzado: Optional[Animatronic] = None
     eliminado: Optional[Animatronic] = None
     retrasado: Optional[Animatronic] = None
 
@@ -142,36 +131,34 @@ class ResultadoArrojo:
         return self.eliminado is not None or self.retrasado is not None
 
 
-def resolver_arrojo(presentes, id_objeto: str, iluminados) -> ResultadoArrojo:
-    """Decide a quién le toca el objeto que se acaba de arrojar.
+def resolver_arrojo(alcanzado, id_objeto: str, iluminado: bool) -> ResultadoArrojo:
+    """Qué le hace el objeto a quien le dio (ver objetivo_del_arrojo).
 
-    Primero se atiende a Doña Clotilde si pidió justo eso, porque el objeto
-    va dirigido a ella. Después se recorre la lista del objeto en orden: el
-    primero de esa lista que esté delante y lo acepte es el que se va. El
-    churrumino suelto es el caso aparte: no elimina a nadie, solo entretiene
-    a El Chavo un rato.
+    Solo cuenta a quién le dio: si el tiro le cae a quien no era, se pierde
+    aunque detrás hubiera alguien a quien sí le servía.
+
+    - A Doña Clotilde solo le vale lo que haya pedido.
+    - El churrumino suelto no elimina a nadie: solo entretiene a El Chavo.
+    - Al resto se lo lleva su objeto, si lo acepta (Jaimico solo con luz).
     """
-    objeto = obtener_objeto(id_objeto)
+    if alcanzado is None:
+        return ResultadoArrojo()
+    resultado = ResultadoArrojo(alcanzado=alcanzado)
 
-    for animatronic in presentes:
-        if animatronic.objeto_pedido == id_objeto:
-            animatronic.ahuyentar()
-            return ResultadoArrojo(eliminado=animatronic)
+    if alcanzado.objeto_pedido is not None:
+        if alcanzado.objeto_pedido == id_objeto:
+            alcanzado.ahuyentar()
+            resultado.eliminado = alcanzado
+        return resultado
 
     if id_objeto == ID_CHURRUMINO:
-        for animatronic in presentes:
-            if animatronic.nombre == nombres.CHAVO:
-                animatronic.retrasar(SEGUNDOS_RETRASO_CHURRUMINO)
-                return ResultadoArrojo(retrasado=animatronic)
-        return ResultadoArrojo()
+        if alcanzado.nombre == nombres.CHAVO:
+            alcanzado.retrasar(SEGUNDOS_RETRASO_CHURRUMINO)
+            resultado.retrasado = alcanzado
+        return resultado
 
-    por_nombre = {animatronic.nombre: animatronic for animatronic in presentes}
-    for nombre in objeto.elimina:
-        animatronic = por_nombre.get(nombre)
-        if animatronic is None:
-            continue
-        if not animatronic.acepta_objeto(nombre in iluminados):
-            continue
-        animatronic.ahuyentar()
-        return ResultadoArrojo(eliminado=animatronic)
-    return ResultadoArrojo()
+    le_sirve = alcanzado.nombre in obtener_objeto(id_objeto).elimina
+    if le_sirve and alcanzado.acepta_objeto(iluminado):
+        alcanzado.ahuyentar()
+        resultado.eliminado = alcanzado
+    return resultado

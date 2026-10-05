@@ -46,6 +46,62 @@ def quitar_fondo_negro(imagen: pygame.Surface) -> pygame.Surface:
     return resultado
 
 
+# Qué tan lejos del negro puro puede estar un píxel y seguir contando como
+# fondo. Lo justo para absorber el ruido de compresión: subirlo se empieza a
+# comer las partes oscuras del propio dibujo.
+TOLERANCIA_FONDO = 2
+
+# Tamaño mínimo, en píxeles, de una mancha oscura para tomarla por fondo. El
+# fondo de una lámina siempre es una extensión grande; lo que toca el borde y
+# es diminuto son motas del propio dibujo, y vale más dejarlas opacas que
+# empezar a mordisquear el arte.
+MINIMO_FONDO = 64
+
+
+def quitar_fondo_alrededor(
+    imagen: pygame.Surface, tolerancia: int = TOLERANCIA_FONDO
+) -> pygame.Surface:
+    """Vuelve transparente el negro que rodea al dibujo y deja intacto el que
+    queda encerrado dentro de él.
+
+    Es lo que separa el fondo de la lámina del monitor, que tiene que dejar
+    ver el patio de detrás, de la pantalla apagada del propio aparato, que
+    tiene que seguir siendo negra. Las dos zonas son del mismo color: lo único
+    que las distingue es que una llega hasta el borde de la imagen y la otra
+    está rodeada por el chasis.
+
+    Se resuelve con máscaras de pygame (código C) y una sola vez, al cargar:
+    se agrupan los píxeles casi negros y se conservan los grupos grandes que
+    tocan el marco de la imagen. Si no hay ninguno, la imagen se queda entera.
+    """
+    ancho, alto = imagen.get_size()
+    oscuros = pygame.mask.from_threshold(
+        imagen, (0, 0, 0), (tolerancia, tolerancia, tolerancia, 255)
+    )
+    marco = _mascara_del_marco(ancho, alto)
+    fondo = pygame.mask.Mask((ancho, alto))
+    for grupo in oscuros.connected_components(minimum=MINIMO_FONDO):
+        if grupo.overlap(marco, (0, 0)):
+            fondo.draw(grupo, (0, 0))
+
+    # BLEND_RGBA_MIN deja como está lo que la capa marca en blanco opaco y
+    # pone a cero (transparente) lo que marca en negro sin alfa.
+    capa = pygame.Surface((ancho, alto), pygame.SRCALPHA)
+    fondo.to_surface(capa, setcolor=(0, 0, 0, 0), unsetcolor=(255, 255, 255, 255))
+    recortada = imagen.convert_alpha()
+    recortada.blit(capa, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    return recortada
+
+
+def _mascara_del_marco(ancho: int, alto: int) -> "pygame.mask.Mask":
+    """Solo el borde de un píxel de la imagen: es contra lo que se comprueba
+    si una mancha oscura llega hasta fuera o está encerrada dentro del
+    dibujo."""
+    marco = pygame.mask.Mask((ancho, alto), fill=True)
+    marco.erase(pygame.mask.Mask((ancho - 2, alto - 2), fill=True), (1, 1))
+    return marco
+
+
 def cargar_imagen(ruta, con_alfa: bool = False) -> Optional[pygame.Surface]:
     """Lee una imagen del disco. Devuelve None si no está o si pygame no
     puede decodificarla."""
