@@ -15,9 +15,11 @@ import pygame
 
 from ..config.audio import (
     EFECTO_CAMBIO_CAMARA,
+    EFECTO_EASTER_EGG,
     EFECTO_ENCENDIDO_CAMARAS,
     EFECTO_INTERFERENCIA,
     EFECTO_LLAMADA_BARRIGA,
+    EFECTO_LLEGA_CHAVO,
     EFECTO_NOCHE_SUPERADA,
     EFECTO_PASOS_DERECHA,
     EFECTO_PASOS_IZQUIERDA,
@@ -26,24 +28,22 @@ from ..config.audio import (
     EFECTO_SORPRESA,
     EFECTO_SUSTO,
     EFECTOS_LLAMADA_FLORINDA,
+    EFECTOS_SALIDA_RAMON,
     PROPORCION_VOLUMEN_EN_PAUSA,
 )
 from ..config.interfaz import COLOR_NEGRO, TIRAS_BLOQUEO_SEGUNDOS
 from ..config.ventana import ALTO_PANTALLA, ANCHO_PANTALLA, FPS
 from ..dominio.animatronicos import (
+    Espanto,
     acechando,
     acechando_en,
     detectar_luz_mortal,
-    detectar_luz_que_descarga,
     iluminados_en,
     nombres,
-    objetivo_del_arrojo,
-    resolver_arrojo,
 )
-from ..dominio.arrojo import ObjetoEnVuelo
-from ..dominio.inventario import ORDEN_ARROJABLES, Inventario
 from ..dominio.jugador import Jugador
 from ..dominio.linterna import Linterna, baterias_iniciales, esta_iluminado
+from ..dominio.aparicion_rara import AparicionesRaras
 from ..dominio.objetos import ID_BATERIA, ObjetosEnElSuelo, obtener_objeto
 from ..dominio.servicios import Resultado, Servicio, ServiciosUtilidad
 from ..dominio.temporizador import TemporizadorNoche
@@ -56,6 +56,7 @@ from ..infraestructura.guardado import (
 )
 from ..infraestructura.audio import GestorAudio
 from ..infraestructura.pantalla import GestorPantalla
+from ..presentacion.aparicion_rara import ImagenesRaras
 from ..presentacion.camaras import SistemaCamaras
 from ..presentacion.hud import (
     RECT_FRANJA_TIRAS,
@@ -75,11 +76,12 @@ from ..presentacion.menu import (
     MenuPrincipal,
     SolicitudNoche,
 )
+from ..presentacion.menu_derrota import SOLICITUD_REINTENTAR, MenuDerrota
 from ..presentacion.noche_superada import SOLICITUD_CONTINUAR, MenuVictoria, RelojVictoria
 from ..presentacion.panel_servicios import PanelServicios
 from ..presentacion.vista import VistaJugador
 from .aviso import AvisoTemporal
-from .entrada import Accion, accion_de, ranura_de
+from .entrada import Accion, accion_de
 from .estados import EstadoJuego, GestorEstados
 from .noche import MOTIVO_ATRAPADO, Noche
 
@@ -150,32 +152,35 @@ class Juego:
         self.menu_pausa = MenuPausa(
             self.idiomas, self.configuracion, self.audio, self.gestor_pantalla
         )
-        # Una sola hoja de iconos compartida por el HUD y por el suelo.
         self.iconos = IconosObjetos()
-        self.interfaz = InterfazJuego(self.idiomas, self.iconos)
+        self.interfaz = InterfazJuego(self.idiomas)
         self.vista = VistaJugador(self.iconos)
         self.sistema_camaras = SistemaCamaras()
         self.panel_servicios = PanelServicios()
         self.temporizador = TemporizadorNoche()
         self.jugador = Jugador()
         self.linterna = Linterna()
-        self.inventario = Inventario()
+        self.espanto = Espanto()
         self.servicios = ServiciosUtilidad()
         self.objetos_en_suelo = ObjetosEnElSuelo(1)
+        self.imagenes_raras = ImagenesRaras()
+        self.apariciones = AparicionesRaras(1, self.imagenes_raras.cantidad)
         self.susto = Susto()
         self.reloj_victoria = RelojVictoria(self.idiomas)
         self.menu_victoria = MenuVictoria(self.idiomas)
+        self.menu_derrota = MenuDerrota(self.idiomas)
         self.periodico = PeriodicoInicial()
         self.tarjeta_noche = TarjetaNoche(self.idiomas)
 
         self.noche = Noche()
         self.punto_luz = (ANCHO_PANTALLA // 2, ALTO_PANTALLA // 2)
-        # El objeto que va por el aire, si hay uno: su efecto llega al caer.
-        self.objeto_en_vuelo = None
         self.aviso = AvisoTemporal()
         # Si en el fotograma anterior tenía a alguien delante, para que el
         # sobresalto suene al encontrárselo y no en bucle.
         self._vio_a_alguien = False
+        # Dónde estaba Doña Florinda el fotograma anterior: cuando se mueve,
+        # el monitor da un tirón (ver _distorsionar_si_se_movio_florinda).
+        self._florinda_estaba = None
         # Los dos seguros de las pestañas de abajo: uno se levanta al salir el
         # cursor de la franja y el otro es un rato muerto tras bajar un panel
         # (ver _atender_tiras).
@@ -201,14 +206,15 @@ class Juego:
         self.temporizador.reiniciar(self.noche.intervalo_movimiento)
         self.jugador.reiniciar()
         self.linterna.reiniciar(baterias_iniciales(self.noche.numero))
-        self.inventario.reiniciar()
+        self.espanto.reiniciar()
         self.servicios.reiniciar(self.noche.numero)
         self.objetos_en_suelo = ObjetosEnElSuelo(self.noche.numero)
-        self.sistema_camaras.reiniciar(CAMARA_INICIAL)
+        self.apariciones = AparicionesRaras(self.noche.numero, self.imagenes_raras.cantidad)
+        self.sistema_camaras.reiniciar(CAMARA_INICIAL, self.noche.numero)
         self.panel_servicios.activo = False
-        self.objeto_en_vuelo = None
         self.aviso.limpiar()
         self._vio_a_alguien = False
+        self._florinda_estaba = self._donde_esta_florinda()
         self._tira_usada = False
         self._tiras_bloqueadas = 0.0
         self._entrar_a_la_noche(nueva_partida)
@@ -249,7 +255,21 @@ class Juego:
             self.audio.reproducir_efecto(EFECTO_SUSTO)
             self.gestor_estados.cambiar_a(EstadoJuego.SUSTO)
         else:
-            self.gestor_estados.cambiar_a(EstadoJuego.GAME_OVER)
+            self._mostrar_game_over()
+
+    def _mostrar_game_over(self):
+        self.menu_derrota.abrir()
+        self.gestor_estados.cambiar_a(EstadoJuego.GAME_OVER)
+
+    def _reintentar(self):
+        """Vuelve a empezar la misma noche, con los mismos niveles si era la
+        personalizada. No es una partida nueva: no borra el avance ni vuelve
+        a enseñar el periódico, solo la tarjeta de la noche."""
+        self.iniciar_noche(SolicitudNoche(
+            numero=self.noche.numero,
+            personalizada=self.noche.personalizada,
+            niveles_ia=dict(self.noche.niveles_ia),
+        ))
 
     def _avisar(self, clave: str, **formato):
         self.aviso.mostrar(self.idiomas.t(clave, **formato))
@@ -282,6 +302,8 @@ class Juego:
                 self.menu_pausa.manejar_evento(evento, posicion)
             elif self.gestor_estados.en_menu_victoria():
                 self.menu_victoria.manejar_evento(evento, posicion)
+            elif self.gestor_estados.termino_en_derrota():
+                self._manejar_evento_derrota(evento, posicion)
             elif evento.type == pygame.KEYDOWN:
                 self._procesar_tecla(evento.key)
             elif evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
@@ -293,6 +315,8 @@ class Juego:
             self._atender_pausa()
         elif self.gestor_estados.en_menu_victoria():
             self._atender_menu_victoria()
+        elif self.gestor_estados.termino_en_derrota():
+            self._atender_derrota()
 
     def _atender_menu(self):
         if self.menu.salir_solicitado:
@@ -316,15 +340,23 @@ class Juego:
         elif solicitud == SOLICITUD_MENU_PRINCIPAL:
             self.volver_al_menu()
 
+    def _manejar_evento_derrota(self, evento, posicion):
+        """ESC sigue cerrando el juego desde aquí, como antes; lo demás lo
+        lleva el menú de derrota."""
+        if evento.type == pygame.KEYDOWN and accion_de(evento.key) is Accion.ESCAPE:
+            self._ejecutando = False
+            return
+        self.menu_derrota.manejar_evento(evento, posicion)
+
+    def _atender_derrota(self):
+        solicitud = self.menu_derrota.consumir_solicitud()
+        if solicitud == SOLICITUD_REINTENTAR:
+            self._reintentar()
+        elif solicitud == SOLICITUD_MENU_PRINCIPAL:
+            self.volver_al_menu()
+
     def _procesar_tecla(self, tecla):
         accion = accion_de(tecla)
-
-        if self.gestor_estados.estado is EstadoJuego.GAME_OVER:
-            if accion is Accion.CONFIRMAR:
-                self.volver_al_menu()
-            elif accion is Accion.ESCAPE:
-                self._ejecutando = False
-            return
 
         if not self.gestor_estados.jugando():
             return
@@ -335,11 +367,6 @@ class Juego:
 
         if accion is not None:
             self._ejecutar_accion(accion)
-            return
-
-        ranura = ranura_de(tecla)
-        if ranura is not None:
-            self._arrojar(ranura)
 
     def _ejecutar_accion(self, accion: Accion):
         if accion is Accion.CAMINAR_IZQUIERDA:
@@ -354,8 +381,6 @@ class Juego:
             self._recoger_objeto()
         elif accion is Accion.CAMBIAR_BATERIA:
             self.linterna.cambiar_bateria()
-        elif accion is Accion.COMBINAR_CAFE:
-            self._combinar_cafe()
         elif accion is Accion.ALTERNAR_CAMARAS and self.jugador.esta_escondido:
             self._alternar_camaras()
         elif accion is Accion.ALTERNAR_SERVICIOS and self.jugador.esta_escondido:
@@ -384,7 +409,23 @@ class Juego:
         """Si el monitor o el tablero de servicios están levantados."""
         return self.sistema_camaras.activo or self.panel_servicios.activo
 
+    def _atado_al_tablero(self) -> bool:
+        """Con un servicio en marcha el jugador no suelta el tablero: ni lo
+        baja, ni se asoma, ni cambia al monitor hasta que termine. Ese rato
+        a ciegas y sin poder salir es el precio de restablecer algo."""
+        return self.panel_servicios.activo and self.servicios.ocupado
+
+    def _avisar_si_esta_atado(self) -> bool:
+        """Si está atado al tablero, se lo dice y devuelve True para que
+        quien preguntó no haga nada más."""
+        if not self._atado_al_tablero():
+            return False
+        self._avisar("servicio_sin_terminar")
+        return True
+
     def _alternar_camaras(self):
+        if self._avisar_si_esta_atado():
+            return
         if self.sistema_camaras.activo:
             self._bajar_paneles()
             return
@@ -428,6 +469,8 @@ class Juego:
         de abajo: las pestañas de subir ocupan ese mismo sitio, así que sin
         los seguros bajar el monitor sería volverlo a levantar en el
         fotograma siguiente."""
+        if self._avisar_si_esta_atado():
+            return
         self.sistema_camaras.activo = False
         self.panel_servicios.activo = False
         self._tira_usada = True
@@ -444,113 +487,55 @@ class Juego:
             self.audio.reproducir_efecto_camara(EFECTO_CAMBIO_CAMARA)
 
     def _sonar_audio_de_quico(self):
-        """Botón de audio del monitor: gasta una reproducción y le quita una
-        cámara de terreno a Doña Florinda.
+        """Botón de audio del monitor: suena en la cámara que se está
+        mirando, y Doña Florinda va hacia allá si es vecina de la suya.
 
-        A propósito no avisa de si le hizo efecto. Saber dónde quedó es lo
-        que se gana mirando las cámaras; si el juego lo dijera, el audio
-        pasaría a ser también un detector y no habría razón para vigilarla.
-        Lo único que se avisa es quedarse sin reproducciones, porque eso
-        explica que el botón no haya hecho nada."""
-        resultado = self.servicios.sonar_audio(self.noche.animatronics)
+        Si ella entra justo en la cámara que se mira, esa cámara pierde la
+        señal como con cualquier otro que llegue (ver
+        _cortar_la_senal_si_cambio_quien_se_ve): se oye que funcionó, pero
+        hay que comprobar dónde quedó. Lo único que se avisa es quedarse sin
+        reproducciones; durante la espera entre usos el botón está apagado y
+        no hace nada."""
+        camara = self.sistema_camaras.camara_actual
+        vistos = self._quienes_se_ven()
+        resultado = self.servicios.sonar_audio(self.noche.animatronics, camara)
+        if resultado is Resultado.OCUPADO:
+            return
         if resultado is Resultado.SIN_USOS:
             self._avisar(MENSAJES_SERVICIO[resultado])
             return
         self.audio.reproducir_efecto_al_azar(EFECTOS_LLAMADA_FLORINDA)
+        self.sistema_camaras.sonar_audio_en(camara)
+        self._cortar_la_senal_si_cambio_quien_se_ve(vistos)
 
     # ------------------------------------------------------------------
-    # Objetos
+    # Baterías del suelo
     # ------------------------------------------------------------------
     def _recoger_objeto(self):
-        """Las baterías van directas a la linterna; el resto, al inventario."""
+        """Lo único que hay tirado son baterías, y van directas al bolsillo."""
         id_objeto = self._objeto_a_la_vista()
         if id_objeto is None or not self.objetos_en_suelo.recoger(id_objeto):
             return
         if id_objeto == ID_BATERIA:
             self.linterna.guardar_bateria()
-        else:
-            self.inventario.guardar(id_objeto)
 
     def _objeto_a_la_vista(self):
-        """Id del objeto que el jugador puede recoger ahora mismo, o None.
-
-        Sin apuntarle con la linterna no se puede recoger nada, y si el haz
-        alcanza a varios se recoge el que esté más cerca del centro: para
-        los otros hay que mover la luz."""
+        """Id de lo que el jugador puede recoger ahora mismo, o None. Sin
+        apuntarle con la linterna no se puede recoger nada."""
         posicion = self.jugador.posicion_actual
         if not posicion.permite_buscar or not self.linterna.encendida:
             return None
-        x, y = self.punto_luz
-        mas_cerca = None
-        menor_distancia = None
         for id_objeto in self.objetos_en_suelo.objetos_en(posicion.id):
             punto = obtener_objeto(id_objeto).punto_suelo
-            if not self._le_cabe(id_objeto) or not esta_iluminado(punto, self.punto_luz):
-                continue
-            distancia = (x - punto[0]) ** 2 + (y - punto[1]) ** 2
-            if menor_distancia is None or distancia < menor_distancia:
-                mas_cerca, menor_distancia = id_objeto, distancia
-        return mas_cerca
+            if self._le_cabe(id_objeto) and esta_iluminado(punto, self.punto_luz):
+                return id_objeto
+        return None
 
     def _le_cabe(self, id_objeto: str) -> bool:
-        """No se lleva más de uno de cada cosa, ni más baterías de las que
-        caben en el bolsillo. Lo que no le cabe ni se recoge ni saca el aviso
-        de recogerlo: se queda en su sitio hasta que gaste el suyo."""
-        if id_objeto == ID_BATERIA:
-            return not self.linterna.baterias_llenas
-        return not self.inventario.tiene(id_objeto)
-
-    def _combinar_cafe(self):
-        if self.inventario.combinar_cafe():
-            self._avisar("cafe_preparado")
-
-    def _arrojar(self, indice: int):
-        """Arroja el objeto de esa ranura hacia donde apunta el ratón. Se
-        gasta siempre, acierte o no: ese es el castigo por fallar el tiro o
-        por tirar el que no tocaba. Mientras uno vuela no sale otro."""
-        if self.jugador.esta_escondido or indice >= len(ORDEN_ARROJABLES):
-            return
-        if self.objeto_en_vuelo is not None:
-            return
-        id_objeto = ORDEN_ARROJABLES[indice]
-        if not self.inventario.gastar(id_objeto):
-            return
-        self.objeto_en_vuelo = ObjetoEnVuelo(
-            id_objeto, tuple(self.punto_luz), self.jugador.posicion
-        )
-
-    def _avanzar_objeto_en_vuelo(self, dt: float):
-        """Al caer el objeto se decide a quién le dio y qué le hizo. La luz
-        se mira en ese momento: a Jaimico hay que tenerlo alumbrado cuando
-        le llega el café, no cuando se suelta."""
-        vuelo = self.objeto_en_vuelo
-        if vuelo is None or not vuelo.avanzar(dt):
-            return
-        self.objeto_en_vuelo = None
-        alcanzado = objetivo_del_arrojo(
-            self.noche.animatronics, vuelo.id_posicion, vuelo.destino
-        )
-        iluminado = alcanzado is not None and alcanzado.nombre in iluminados_en(
-            self.noche.animatronics, vuelo.id_posicion,
-            self.punto_luz, self.linterna.encendida,
-        )
-        resultado = resolver_arrojo(alcanzado, vuelo.id_objeto, iluminado)
-
-        nombre_objeto = self.idiomas.t(obtener_objeto(vuelo.id_objeto).clave_texto)
-        if resultado.eliminado is not None:
-            self._avisar(
-                "arrojo_elimina", objeto=nombre_objeto,
-                nombre=resultado.eliminado.nombre,
-            )
-        elif resultado.retrasado is not None:
-            self._avisar("arrojo_retrasa", nombre=resultado.retrasado.nombre)
-        elif resultado.alcanzado is None:
-            self._avisar("arrojo_fallado", objeto=nombre_objeto)
-        else:
-            self._avisar(
-                "arrojo_perdido", objeto=nombre_objeto,
-                nombre=resultado.alcanzado.nombre,
-            )
+        """No se llevan más baterías de las que caben en el bolsillo. La que
+        no cabe ni se recoge ni saca el aviso de recogerla: se queda tirada
+        hasta que se vaya sola."""
+        return id_objeto != ID_BATERIA or not self.linterna.baterias_llenas
 
     # ------------------------------------------------------------------
     # Servicios del barril
@@ -568,8 +553,10 @@ class Juego:
             self.audio.reproducir_efecto(EFECTO_LLAMADA_BARRIGA)
         if servicio is Servicio.BARRIGA and resultado is Resultado.AHUYENTADO:
             # Que la llamada haya servido se oye, no se lee: es Don Ramón
-            # largándose después de que el Sr. Barriga fuera por él.
-            self.audio.reproducir_efecto(EFECTO_RAMON_SE_VA)
+            # largándose después de que el Sr. Barriga fuera por él, con una
+            # de sus frases al azar (o la de siempre si no hay variantes).
+            if self.audio.reproducir_efecto_al_azar(EFECTOS_SALIDA_RAMON) is None:
+                self.audio.reproducir_efecto(EFECTO_RAMON_SE_VA)
         if servicio is Servicio.REPONER_AUDIO and resultado is Resultado.EN_MARCHA:
             # Aquí no suena la grabación: se está reparando la cinta para
             # poder volver a usarla desde el monitor.
@@ -611,7 +598,7 @@ class Juego:
         if self.gestor_estados.en_susto():
             self.susto.actualizar(dt)
             if self.susto.termino:
-                self.gestor_estados.cambiar_a(EstadoJuego.GAME_OVER)
+                self._mostrar_game_over()
             return
 
         if self.gestor_estados.en_reloj_victoria():
@@ -641,7 +628,11 @@ class Juego:
         self._atender_tiras()
         self.linterna.actualizar(dt)
         self.objetos_en_suelo.actualizar(dt)
+        self._dejar_pasar_las_apariciones(dt)
+        estaban_rotas = self.sistema_camaras.averiadas
         self.sistema_camaras.actualizar(dt, self.noche.animatronics)
+        if self.sistema_camaras.averiadas and not estaban_rotas:
+            self._llega_el_chavo()
         if self.servicios.actualizar(dt, self.jugador.esta_escondido) in SERVICIOS_QUE_REPARAN_CAMARAS:
             self.sistema_camaras.reparar()
         if self.servicios.barriga_letal:
@@ -654,14 +645,14 @@ class Juego:
         vigilados = self._quienes_se_ven()
         self.temporizador.actualizar(dt, self._elenco_en_movimiento())
         self._sonar_pasos_de_los_que_llegan(acechaban)
-        self._cortar_la_senal_de_quien_se_movio(vigilados)
+        self._cortar_la_senal_si_cambio_quien_se_ve(vigilados)
+        self._distorsionar_si_se_movio_florinda()
         self._reaccionar_a_lo_que_ve()
-        self._avanzar_objeto_en_vuelo(dt)
         self.aviso.actualizar(dt)
 
         if self._murio_por_la_luz():
             return
-        self._castigo_por_la_luz()
+        self._espantar_con_la_luz(dt)
         self._activar_a_los_alumbrados()
         if self._fue_atacado(dt):
             return
@@ -731,32 +722,68 @@ class Juego:
                 self.audio.reproducir_efecto(self._pasos_de(animatronic))
 
     def _quienes_se_ven(self):
-        """La cámara que el jugador tiene delante y quiénes están dentro de
-        ella ahora mismo, antes de que corra la ronda de movimiento. Devuelve
-        la cámara en None si no está mirando el monitor."""
+        """La cámara que el jugador tiene delante y los nombres de quienes
+        están dentro de ella ahora mismo, antes de que alguien se mueva.
+        Devuelve la cámara en None si no está mirando el monitor."""
         if not self.sistema_camaras.activo:
-            return None, ()
+            return None, frozenset()
         camara = self.sistema_camaras.camara_actual
-        return camara, tuple(
-            animatronic for animatronic in self.noche.animatronics
+        return camara, self._ocupantes_de(camara)
+
+    def _ocupantes_de(self, camara: str) -> frozenset:
+        return frozenset(
+            animatronic.nombre for animatronic in self.noche.animatronics
             if animatronic.activo and animatronic.habitacion_actual == camara
         )
 
-    def _cortar_la_senal_de_quien_se_movio(self, vigilados):
-        """Si alguien se movió justo mientras se le estaba mirando, su cámara
-        se queda sin señal unos segundos.
+    def _cortar_la_senal_si_cambio_quien_se_ve(self, vigilados):
+        """Si alguien entra o sale de la cámara que se está mirando, esa
+        cámara se queda sin señal unos segundos.
 
-        Es lo que le pone precio a vigilar a alguien de cerca: se oye la
-        interferencia y se sabe que se fue, pero no hacia dónde, así que hay
-        que buscarlo por las demás cámaras en vez de seguirlo con la mirada.
+        Es lo que le pone precio a vigilar de cerca: se oye la interferencia
+        y se sabe que alguien se movió, pero no hacia dónde ni quién llegó,
+        así que hay que buscarlo por las demás cámaras.
         """
-        camara, mirados = vigilados
-        if camara is None:
-            return
-        if not any(otro.habitacion_actual != camara for otro in mirados):
+        camara, antes = vigilados
+        if camara is None or self._ocupantes_de(camara) == antes:
             return
         if self.sistema_camaras.perder_senal(camara):
             self.audio.reproducir_efecto_camara(EFECTO_INTERFERENCIA)
+
+    def _donde_esta_florinda(self):
+        for animatronic in self.noche.animatronics:
+            if animatronic.nombre == nombres.FLORINDA and animatronic.activo:
+                return animatronic.habitacion_actual
+        return None
+
+    def _distorsionar_si_se_movio_florinda(self):
+        """Cuando Doña Florinda cambia de cámara (por su cuenta o por el
+        audio), el monitor da un tirón breve en la cámara que se esté
+        mirando, sea cual sea: se sabe que se movió, no adónde."""
+        ahora = self._donde_esta_florinda()
+        if ahora != self._florinda_estaba and self._florinda_estaba is not None:
+            self.sistema_camaras.distorsionar()
+        self._florinda_estaba = ahora
+
+    def _llega_el_chavo(self):
+        """El Chavo acaba de romper las cámaras: aparece de golpe en el
+        Primer Patio y hay que enfrentarlo. Suena su llegada en vez de los
+        pasos de los demás."""
+        for animatronic in self.noche.animatronics:
+            if (
+                animatronic.nombre == nombres.SABOTEADOR
+                and animatronic.activo
+                and not animatronic.esta_acechando()
+            ):
+                animatronic.irrumpir()
+                self.audio.reproducir_efecto(EFECTO_LLEGA_CHAVO)
+                return
+
+    def _dejar_pasar_las_apariciones(self, dt: float):
+        """Las apariciones raras: de vez en cuando se cuela una imagen casi
+        transparente con su sonido. No cambia nada del juego."""
+        if self.apariciones.actualizar(dt) is not None:
+            self.audio.reproducir_efecto(EFECTO_EASTER_EGG)
 
     def _reaccionar_a_lo_que_ve(self):
         """El sobresalto de encontrarse a alguien plantado en el patio.
@@ -797,18 +824,28 @@ class Juego:
         self._perder(victimario.nombre, "game_over_luz")
         return True
 
-    def _castigo_por_la_luz(self):
-        """Alumbrar a La Chilindrina cuesta la batería entera, no la noche.
-
-        No cambia de estado ni saca ningún aviso a propósito: la partida
-        sigue corriendo igual y el jugador se entera de lo que hizo porque se
-        queda a oscuras de golpe."""
-        if not self.linterna.encendida or self._hay_panel_delante():
-            return
-        castigadora = detectar_luz_que_descarga(
-            self.noche.animatronics, self.jugador.posicion, self.punto_luz
+    def _alumbrando_el_patio(self) -> bool:
+        """Si el haz llega de verdad al patio: con un panel delante o dentro
+        del barril no alumbra a nadie."""
+        return (
+            self.linterna.encendida
+            and not self._hay_panel_delante()
+            and not self.jugador.esta_escondido
         )
-        if castigadora is not None:
+
+    def _espantar_con_la_luz(self, dt: float):
+        """La linterna como arma: sostener el centro del haz sobre el punto
+        débil de quien se espanta con la luz lo saca de encima (ver
+        dominio/animatronicos/espanto.py).
+
+        Que funcionó se ve, no se lee: el personaje se va. Y fallarle a La
+        Chilindrina tampoco avisa: el jugador se entera porque se queda a
+        oscuras de golpe."""
+        resultado = self.espanto.actualizar(
+            dt, self.noche.animatronics, self.jugador.posicion,
+            self.punto_luz, self._alumbrando_el_patio(),
+        )
+        if resultado.descarga:
             self.linterna.descargar()
 
     def _activar_a_los_alumbrados(self):
@@ -832,9 +869,9 @@ class Juego:
         Ramón y Doña Florinda lo alcanzan ahí, y los demás únicamente si ya
         los alumbró alguna vez (ver Animatronic.puede_alcanzar_escondido).
 
-        No hay tregua para nadie: cada objeto está siempre en su sitio o a
-        punto de volver, así que no tener con qué responder es haberlo
-        gastado mal, no mala suerte."""
+        No hay tregua para nadie: a quien no se va con un servicio se le
+        espanta con la linterna, así que no tener con qué responder es haberse
+        quedado sin batería o no haberle atinado."""
         for animatronic in self.noche.animatronics:
             if animatronic.descontar_espera(dt, self.jugador.esta_escondido):
                 self._perder(animatronic.nombre, MOTIVO_ATRAPADO)
@@ -877,6 +914,7 @@ class Juego:
                 self.noche.derrota.nombre_atacante,
                 self.noche.derrota.clave_motivo,
             )
+            self.menu_derrota.dibujar(self.pantalla)
         elif self.gestor_estados.en_reloj_victoria():
             self.reloj_victoria.dibujar(self.pantalla)
         elif self.gestor_estados.en_menu_victoria():
@@ -897,9 +935,8 @@ class Juego:
                 self.pantalla, self.jugador, self.noche.animatronics,
                 self.objetos_en_suelo, self.linterna, self.punto_luz,
                 fuente=self.interfaz.fuente_camara, idiomas=self.idiomas,
+                espanto=self.espanto,
             )
-            if self.objeto_en_vuelo is not None:
-                self.vista.dibujar_objeto_en_vuelo(self.pantalla, self.objeto_en_vuelo)
             if self.panel_servicios.activo:
                 self.panel_servicios.dibujar(
                     self.pantalla, self.servicios, self.punto_luz
@@ -909,32 +946,26 @@ class Juego:
             # patio se sigue viendo alrededor mientras se mueve.
             self.sistema_camaras.animacion.dibujar(self.pantalla)
 
+        if self.apariciones.visible:
+            # Encima de la escena y debajo del HUD: se ve, pero no tapa nada
+            # de lo que hace falta leer.
+            self.imagenes_raras.dibujar(
+                self.pantalla, self.apariciones.actual, self.apariciones.progreso
+            )
         self.interfaz.dibujar_hud(
             self.pantalla, self.temporizador, self.jugador, self.linterna,
-            self.inventario, self._estado_hud(),
+            self._estado_hud(),
         )
 
     def _estado_hud(self) -> EstadoHud:
-        id_peticion, peticion = self._peticion_de_clotilde()
         return EstadoHud(
             numero_noche=self.noche.numero,
             en_camaras=self.sistema_camaras.activo,
             en_servicios=self.panel_servicios.activo,
             objeto_a_recoger=self._nombre_objeto_a_la_vista(),
-            peticion=peticion,
-            id_peticion=id_peticion,
             tira_resaltada=self._tira_resaltada(),
             aviso=self.aviso.texto,
         )
-
-    def _peticion_de_clotilde(self):
-        """Qué objeto reclama quien lo esté pidiendo delante del jugador."""
-        for animatronic in acechando_en(self.noche.animatronics, self.jugador.posicion):
-            if animatronic.objeto_pedido is None:
-                continue
-            objeto = obtener_objeto(animatronic.objeto_pedido)
-            return objeto.id, self.idiomas.t(objeto.clave_texto)
-        return "", ""
 
     def _tira_resaltada(self) -> str:
         if not self.jugador.esta_escondido:

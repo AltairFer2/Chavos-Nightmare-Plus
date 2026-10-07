@@ -1,7 +1,7 @@
 """Nombre de cada personaje del elenco, en un único sitio.
 
-Varios módulos necesitan referirse a un personaje concreto: el objeto que
-ahuyenta a Quico, el servicio que se lleva a Don Ramón, quién arruina las
+Varios módulos necesitan referirse a un personaje concreto: el audio que
+empuja a Doña Florinda, el servicio que se lleva a Don Ramón, quién arruina las
 cámaras. Tenerlos aquí evita repartir el mismo literal por medio proyecto y
 que una tilde mal puesta rompa una mecánica en silencio.
 

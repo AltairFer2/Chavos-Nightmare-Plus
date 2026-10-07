@@ -23,7 +23,10 @@ COLOR_OPCION_DESHABILITADA = (95, 95, 95)
 # Si existe un archivo con este nombre (.ttf/.otf) dentro de assets/fuentes/
 # se usa ese archivo; si no, se busca una fuente instalada en el sistema.
 # Cambiar aquí el nombre y los tamaños afecta a toda la interfaz.
-FUENTE_NOMBRE = "Comic Sans"
+# Comic Neue: la alternativa libre a Comic Sans (SIL Open Font License, ver
+# assets/fuentes/OFL.txt), así que se puede distribuir con el juego. No
+# trae flechas (←↑→↓): los textos usan las letras W/A/S/D en su lugar.
+FUENTE_NOMBRE = "ComicNeue"
 FUENTE_TAMANO_TITULO = 64
 FUENTE_TAMANO_MENU = 34
 FUENTE_TAMANO_TEXTO = 24
@@ -38,16 +41,30 @@ ALTO_ANIMATRONIC_VISTA = 560
 ALTO_ANIMATRONIC_CAMARA = 320
 
 # --- Iconos de objetos ---
-# Lado del icono de un objeto tirado en el suelo y de los del inventario.
+# Lado del icono de lo que se encuentra tirado en el suelo.
 ICONO_OBJETO_SUELO = 64
-ICONO_OBJETO_HUD = 52
+# En sus últimos segundos tirado, el objeto parpadea para avisar de que está
+# por irse. Parpadeos por segundo mientras dura el aviso.
+OBJETO_PARPADEO_SEGUNDOS = 3.0
+OBJETO_PARPADEOS_POR_SEGUNDO = 4
 
-# --- Objeto arrojado en vuelo ---
-# Sale de abajo al centro, que es donde está la mano del jugador, y sube en
-# arco hasta donde se apuntó. Se dibuja por encima de la penumbra: aunque se
-# arroje a oscuras, el jugador tiene que ver adónde fue a parar.
-ARROJO_ORIGEN = (ANCHO_PANTALLA // 2, ALTO_PANTALLA + ICONO_OBJETO_SUELO // 2)
-ARROJO_ALTURA_ARCO = 140
+# --- Apariciones raras (easter eggs) ---
+# Opacidad máxima (0-255) a la que se ven: muy baja, para que se note solo
+# si se presta atención. APARICION_RARA_FUNDIDO es qué parte de su duración
+# se va en entrar y otra igual en salir.
+APARICION_RARA_OPACIDAD = 34
+APARICION_RARA_FUNDIDO = 0.3
+
+# --- Punto débil (espantar con la luz) ---
+# Se dibuja debajo de la penumbra, como la figura: solo se ve con el haz
+# encima. El halo late para leerse sobre cualquier ropa, y alrededor un arco
+# va marcando lo sostenido.
+PUNTO_DEBIL_COLOR = (255, 238, 160)
+PUNTO_DEBIL_OPACIDAD_HALO = (70, 150)  # mínima y máxima del latido
+PUNTO_DEBIL_LATIDOS_POR_SEGUNDO = 3.0
+PUNTO_DEBIL_RADIO_NUCLEO = 6
+PUNTO_DEBIL_COLOR_PROGRESO = (120, 225, 255)
+PUNTO_DEBIL_GROSOR_PROGRESO = 5
 
 # --- Distribución del menú ---
 MENU_MARGEN_IZQUIERDO = 120
@@ -90,6 +107,21 @@ CAMARA_MAPA_ANCHO = 420
 CAMARA_MAPA_ALTO = 315  # conserva la proporción 4:3 del arte del mapa
 CAMARA_MAPA_MARGEN_DERECHO = 24
 CAMARA_MAPA_MARGEN_INFERIOR = 78  # deja libre la franja del HUD
+
+# Mientras El Chavo está en la cámara que se mira, el monitor se vuelve
+# errático (ver presentacion/monitor_erratico.py): la imagen tiembla a
+# tirones y el mapa se va a saltos, con sus botones, para que escapar de su
+# cámara cueste. La intensidad arranca en CAMARA_ERRATICO_INTENSIDAD_MINIMA
+# nada más verlo y sube con la presión del sabotaje hasta 1.
+# Amplitud en píxeles (x, y), cada cuánto cambia de destino (mín, máx) y
+# qué tan rápido lo persigue, por segundo.
+CAMARA_ERRATICO_INTENSIDAD_MINIMA = 0.6
+CAMARA_ERRATICO_MAPA_AMPLITUD = (260, 170)
+CAMARA_ERRATICO_MAPA_CAMBIO_SEGUNDOS = (0.18, 0.45)
+CAMARA_ERRATICO_MAPA_PERSECUCION = 14.0
+CAMARA_ERRATICO_VISTA_AMPLITUD = (45, 28)
+CAMARA_ERRATICO_VISTA_CAMBIO_SEGUNDOS = (0.04, 0.12)
+CAMARA_ERRATICO_VISTA_PERSECUCION = 30.0
 
 # Ruido de señal sobre la imagen de la cámara.
 CAMARA_ESTATICA_FRAMES = 6
@@ -269,9 +301,21 @@ SUSTO_ZOOM_PROPUESTA = 1.2
 SUSTO_ZOOM = 1.5
 
 # --- Botón de audio del monitor de cámaras ---
-# Suena la grabación de Quico, que hace retroceder a Doña Florinda una cámara
-# en su recorrido. Va abajo a la izquierda, en el hueco que queda entre la
+# Suena la grabación de Quico en la cámara que se mira, y Doña Florinda va
+# hacia allá si es vecina de la suya. Va abajo a la izquierda, en el hueco que queda entre la
 # fecha del HUD y el mapa de la vecindad.
+# Mientras suena, la cámara donde se puso muestra ondas que se abren desde
+# el centro: así se ve en qué cámara se está oyendo.
+CAMARA_AUDIO_EFECTO_SEGUNDOS = 2.0
+CAMARA_AUDIO_ONDAS = 3
+CAMARA_AUDIO_ONDA_PERIODO = 0.9  # segundos que tarda una onda en abrirse
+CAMARA_AUDIO_ONDA_RADIO_MAXIMO = 280
+CAMARA_AUDIO_ONDA_GROSOR = 4
+CAMARA_AUDIO_ONDA_COLOR = (170, 225, 255)
+# Cuando Doña Florinda se mueve, la cámara que se esté mirando (sea cual
+# sea) da un tirón breve: estática y la imagen corrida unos píxeles.
+CAMARA_DISTORSION_SEGUNDOS = 0.4
+CAMARA_DISTORSION_DESPLAZAMIENTO = 10
 CAMARA_AUDIO_ANCHO = 250
 CAMARA_AUDIO_ALTO = 62
 CAMARA_AUDIO_MARGEN_IZQUIERDO = 350

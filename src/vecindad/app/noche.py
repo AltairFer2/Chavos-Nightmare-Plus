@@ -6,7 +6,7 @@ solo con la orquestación.
 """
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List
 
 from ..config.partida import INTERVALO_MOVIMIENTO_POR_DEFECTO
 from ..dominio.animatronicos import (
@@ -42,6 +42,9 @@ class Noche:
     # Segundos entre rondas de movimiento: el ritmo de esta noche.
     intervalo_movimiento: float = INTERVALO_MOVIMIENTO_POR_DEFECTO
     derrota: Derrota = field(default_factory=Derrota)
+    # Los niveles que eligió el jugador, si es la personalizada: hacen falta
+    # para reintentarla tal cual.
+    niveles_ia: Dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def desde_solicitud(cls, solicitud) -> "Noche":
@@ -55,6 +58,7 @@ class Noche:
                 animatronics=crear_elenco_personalizado(solicitud.niveles_ia),
                 hora_arranque=0,
                 intervalo_movimiento=INTERVALO_MOVIMIENTO_POR_DEFECTO,
+                niveles_ia=dict(solicitud.niveles_ia),
             )
         return cls(
             numero=solicitud.numero,

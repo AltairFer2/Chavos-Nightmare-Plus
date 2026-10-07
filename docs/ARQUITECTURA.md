@@ -53,7 +53,7 @@ de dónde viene cada número:
 | `rutas.py` | Dónde están assets, sonidos y los datos del jugador |
 | `audio.py` | Carpetas de audio, mapa de pistas, volúmenes |
 | `partida.py` | Reloj de la noche, ticks de IA, progresión de noches |
-| `jugabilidad.py` | **Equilibrio**: linterna, objetos, servicios, sabotaje |
+| `jugabilidad.py` | **Equilibrio**: linterna, baterías, punto débil, servicios, sabotaje |
 | `interfaz.py` | Colores, tipografía, distribución de la interfaz |
 
 Para equilibrar el juego se toca `jugabilidad.py`; para mover algo en
@@ -90,15 +90,15 @@ dominio/
 │   ├── entidad.py        su estado vivo y la IA 0-20
 │   ├── elenco.py         las siete fichas concretas + validación
 │   ├── progresion.py     qué nivel tiene cada uno en cada noche
-│   └── enfrentamiento.py cara a cara: luz mortal y a quién le da un objeto
+│   ├── enfrentamiento.py cara a cara: a quién se ve y a quién mata la luz
+│   └── espanto.py        espantar con la luz: el punto débil que hay que sostener
 ├── jugador.py            por dónde se mueve dentro del hub
 ├── linterna.py           batería y haz de luz
-├── inventario.py         lo que carga encima y el café
-├── objetos.py            catálogo y el sitio fijo de cada objeto en el suelo
-├── arrojo.py             el objeto arrojado mientras va por el aire
+├── objetos.py            las baterías del suelo (una a la vez, en su sitio fijo)
 ├── servicios.py          los cuatro servicios del barril
 ├── sabotaje.py           El Chavo arruinando las cámaras
 ├── interferencia.py      cámaras sin señal al moverse alguien delante
+├── aparicion_rara.py     cuándo se cuela un easter egg
 └── temporizador.py       el reloj y los ticks que mueven al elenco
 ```
 
@@ -129,7 +129,7 @@ mientras el arte está en producción.
 | Módulo | Qué resuelve |
 |---|---|
 | `recursos.py` | Carga de imágenes con caché; escalado una sola vez |
-| `fuentes.py` | Tipografías con caché, del archivo o del sistema |
+| `fuentes.py` | Tipografías con caché, del archivo (assets/fuentes, Comic Neue, OFL) o del sistema |
 | `audio.py` | Música y efectos; resuelve el modo streamer |
 | `pantalla.py` | Ventana, escalado del lienzo, coordenadas del ratón |
 | `guardado.py` | Progreso y preferencias en JSON, con saneado |
@@ -155,10 +155,13 @@ presentacion/
 ├── camaras.py            el monitor a pantalla completa
 ├── animacion_monitor.py  el monitor entrando y saliendo de la vista
 ├── mapa_camaras.py       el mapa que hace de selector de cámara
+├── monitor_erratico.py   el temblor y los saltos del monitor con El Chavo en pantalla
 ├── vista.py              lo que el jugador ve, con la linterna
-├── hud.py                noche, hora, batería, inventario, finales
+├── hud.py                noche, hora, batería, finales
 ├── panel_servicios.py    el tablero del barril
 ├── inicio_noche.py       el periódico y la tarjeta de "Noche N - 12:00 AM"
+├── menu_derrota.py       reintentar la noche o volver al menú tras perder
+├── aparicion_rara.py     cómo se ven los easter eggs (casi transparentes)
 ├── noche_superada.py     el reloj de las 6:00 y el menú de continuar
 ├── iconos.py             iconos recortados de su hoja
 └── efectos.py            estática y líneas de barrido, precalculadas
@@ -188,7 +191,7 @@ la clase `Juego`, y se evita la dependencia circular.
 ## Decisiones y por qué
 
 **Los nombres de los personajes están en `nombres.py`.** Varios sitios
-necesitan referirse a un personaje concreto: el objeto que ahuyenta a Quico,
+necesitan referirse a un personaje concreto: el audio que empuja a Florinda,
 el servicio que se lleva a Don Ramón, quién sabotea las cámaras. Antes eran
 literales repartidos por cuatro archivos, donde una tilde mal puesta rompía
 una mecánica en silencio. El módulo no importa nada, así que cualquiera puede
@@ -215,7 +218,7 @@ empaquetado.
 |---|---|
 | Un personaje nuevo | Añadir su nombre a `nombres.py`, su ficha a `elenco.py` y sus niveles a `progresion.py` |
 | Una cámara nueva | `mundo/habitaciones.py` + su carpeta en `assets/camaras/` + su recuadro en `presentacion/mapa_camaras.py` |
-| Un objeto nuevo | `dominio/objetos.py` (catálogo, a quién elimina y su `punto_suelo`) + su celda en la hoja de iconos |
+| Un objeto nuevo en el suelo | `dominio/objetos.py` (catálogo y su `punto_suelo`) + su celda en la hoja de iconos |
 | Un idioma nuevo | Un módulo en `i18n/textos/` y registrarlo en su `__init__.py` |
 | Cambiar los controles | `app/entrada.py`, y solo ahí |
 | Equilibrar la dificultad | `config/jugabilidad.py` y `dominio/animatronicos/progresion.py` |

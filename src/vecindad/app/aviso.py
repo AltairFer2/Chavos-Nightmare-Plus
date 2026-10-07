@@ -1,7 +1,7 @@
 """Mensaje corto que aparece tras una acción y se borra solo.
 
-Lo usan el arrojo de objetos, la combinación del café y los servicios del
-barril para decir qué acaba de pasar sin interrumpir la partida.
+Lo usan los servicios del barril y el monitor para decir qué acaba de pasar
+sin interrumpir la partida.
 """
 
 # Cuánto se queda en pantalla el mensaje de lo que acaba de pasar.

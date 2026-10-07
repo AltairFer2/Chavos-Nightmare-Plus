@@ -1,20 +1,24 @@
-"""Los recursos de la noche: linterna, inventario, objetos del suelo,
-jugador, temporizador y las dos averías de las cámaras."""
+"""Los recursos de la noche: linterna, baterías del suelo, jugador,
+temporizador y las dos averías de las cámaras."""
 
 import pytest
 
 from vecindad.config.jugabilidad import (
-    ARROJO_DURACION_VUELO_SEGUNDOS,
+    BATERIA_ESPERA_POR_NOCHE,
+    BATERIA_ESPERA_SEGUNDOS,
+    BATERIA_PERMANENCIA_POR_NOCHE,
+    BATERIA_PERMANENCIA_SEGUNDOS,
     BATERIAS_INICIALES_EN_BARRIL,
     CAMARA_INTERFERENCIA_MAXIMA_SEGUNDOS,
     CAMARA_INTERFERENCIA_MINIMA_SEGUNDOS,
+    CAMARA_SABOTAJE_AVISO,
+    CAMARA_SABOTAJE_POR_NOCHE,
+    CAMARA_SABOTAJE_RECUPERACION,
     CAMARA_SABOTAJE_SEGUNDOS,
     LINTERNA_BATERIAS_MAXIMAS,
     LINTERNA_DURACION_BATERIA_SEGUNDOS,
     LINTERNA_RADIO,
     NOCHE_SIN_BATERIAS_FIJAS,
-    OBJETO_REAPARICION_POR_NOCHE,
-    OBJETO_REAPARICION_SEGUNDOS,
 )
 from vecindad.config.partida import (
     DURACION_NOCHE_SEGUNDOS,
@@ -22,26 +26,19 @@ from vecindad.config.partida import (
     INTERVALO_MOVIMIENTO_POR_DEFECTO,
 )
 from vecindad.config.ventana import ALTO_PANTALLA, ANCHO_PANTALLA
-from vecindad.dominio.arrojo import ObjetoEnVuelo
-from vecindad.dominio.inventario import ORDEN_ARROJABLES, Inventario
 from vecindad.dominio.jugador import Jugador
 from vecindad.dominio.linterna import Linterna, baterias_iniciales, esta_iluminado
 from vecindad.dominio.objetos import (
     CATALOGO,
-    ID_BALERO,
     ID_BATERIA,
-    ID_CAFE,
-    ID_CAFE_CHURRUMINO,
-    ID_CHURRUMINO,
-    ID_PALETA,
-    OBJETOS_DEFENSIVOS,
     OBJETOS_QUE_APARECEN,
     ObjetosEnElSuelo,
+    espera_de_la_noche,
     obtener_objeto,
-    reaparicion_de_la_noche,
+    permanencia_de_la_noche,
 )
 from vecindad.dominio.interferencia import InterferenciaCamaras
-from vecindad.dominio.sabotaje import ControlSabotaje
+from vecindad.dominio.sabotaje import ControlSabotaje, aguante_de_la_noche
 from vecindad.dominio.temporizador import TemporizadorNoche
 from vecindad.mundo.posiciones import (
     POSICION_BARRIL,
@@ -146,182 +143,94 @@ class TestHazDeLuz:
         assert not esta_iluminado((100, 100), None)
 
 
-class TestInventario:
-    def test_empieza_vacio(self):
-        assert Inventario().arrojables() == []
-
-    def test_guardar_y_gastar(self):
-        inventario = Inventario()
-        inventario.guardar(ID_BATERIA)
-        assert inventario.tiene(ID_BATERIA)
-        assert inventario.gastar(ID_BATERIA)
-        assert not inventario.tiene(ID_BATERIA)
-
-    def test_no_se_puede_gastar_lo_que_no_se_lleva(self):
-        assert not Inventario().gastar(ID_BATERIA)
-
-    def test_las_baterias_se_acumulan(self):
-        inventario = Inventario()
-        inventario.guardar(ID_BATERIA)
-        inventario.guardar(ID_BATERIA)
-        assert inventario.cantidad(ID_BATERIA) == 2
-
-    def test_guardar_un_objeto_inventado_falla(self):
-        with pytest.raises(ValueError):
-            Inventario().guardar("piedra_filosofal")
-
-    def test_el_cafe_necesita_los_dos_ingredientes(self):
-        inventario = Inventario()
-        inventario.guardar(ID_CAFE)
-        assert not inventario.puede_combinar_cafe()
-        assert not inventario.combinar_cafe()
-
-    def test_combinar_gasta_los_dos_y_deja_el_cafe_preparado(self):
-        inventario = Inventario()
-        inventario.guardar(ID_CAFE)
-        inventario.guardar(ID_CHURRUMINO)
-        assert inventario.combinar_cafe()
-        assert not inventario.tiene(ID_CAFE)
-        assert not inventario.tiene(ID_CHURRUMINO)
-        assert inventario.tiene(ID_CAFE_CHURRUMINO)
-
-    def test_los_arrojables_salen_en_el_orden_del_hud(self):
-        inventario = Inventario()
-        for id_objeto in reversed(ORDEN_ARROJABLES):
-            inventario.guardar(id_objeto)
-        assert inventario.arrojables() == ORDEN_ARROJABLES
-
-    def test_reiniciar_lo_deja_vacio(self):
-        inventario = Inventario()
-        inventario.guardar(ID_BATERIA)
-        inventario.reiniciar()
-        assert not inventario.tiene(ID_BATERIA)
-
 class TestCatalogoDeObjetos:
     def test_pedir_un_objeto_inexistente_falla(self):
         with pytest.raises(ValueError):
             obtener_objeto("chipote_de_oro")
 
-    def test_los_seis_defensivos_son_arrojables(self):
-        assert all(obtener_objeto(o).arrojable for o in OBJETOS_DEFENSIVOS)
-
-    def test_la_bateria_no_se_arroja(self):
-        assert not obtener_objeto(ID_BATERIA).arrojable
-
-    def test_cada_objeto_ocupa_su_propia_celda_de_la_hoja(self):
-        celdas = [objeto.celda for objeto in CATALOGO.values()]
-        assert len(set(celdas)) == len(celdas)
+    def test_solo_se_encuentran_baterias(self):
+        """Ya no hay objetos que arrojar: la defensa es la linterna."""
+        assert OBJETOS_QUE_APARECEN == (ID_BATERIA,)
 
     def test_el_id_del_objeto_coincide_con_su_clave(self):
         assert all(clave == objeto.id for clave, objeto in CATALOGO.items())
 
 
-def recoger_y_esperar(suelo, id_objeto, segundos):
-    """Lo recoge de su sitio y deja pasar ese tiempo."""
-    assert suelo.recoger(id_objeto)
-    suelo.actualizar(segundos)
+def suelo_con_bateria(noche=1):
+    """Un suelo al que ya le salió la batería."""
+    suelo = ObjetosEnElSuelo(noche)
+    suelo.actualizar(suelo.espera)
+    assert suelo.esta(ID_BATERIA)
+    return suelo
 
 
-class TestObjetosEnElSuelo:
-    def test_la_noche_arranca_con_todo_en_su_sitio(self):
-        assert ObjetosEnElSuelo(1).objetos_en(POSICION_LAVADEROS) == OBJETOS_QUE_APARECEN
+class TestBateriasEnElSuelo:
+    def test_la_noche_arranca_con_el_suelo_vacio(self):
+        suelo = ObjetosEnElSuelo(1)
+        assert suelo.actual is None
+        assert suelo.objetos_en(POSICION_LAVADEROS) == ()
+
+    def test_tras_la_espera_aparece_justo_a_tiempo(self):
+        """Sin sorteo: el ritmo se puede aprender."""
+        suelo = ObjetosEnElSuelo(1)
+        suelo.actualizar(suelo.espera - 0.5)
+        assert suelo.actual is None
+        assert suelo.segundos_para_aparecer() == pytest.approx(0.5)
+        suelo.actualizar(0.5)
+        assert suelo.actual == ID_BATERIA
 
     def test_solo_hay_objetos_en_los_lavaderos(self):
         """Es el único sitio del patio donde el jugador puede rebuscar; en el
         barril está asomado y dentro no ve el suelo."""
         assert POSICIONES_CON_OBJETOS == (POSICION_LAVADEROS,)
-        assert ObjetosEnElSuelo(1).objetos_en(POSICION_BARRIL) == ()
+        assert suelo_con_bateria().objetos_en(POSICION_BARRIL) == ()
 
-    def test_aparece_todo_lo_que_se_encuentra_tirado(self):
-        """Los seis defensivos, el café y la batería; el café ya preparado
-        no, porque se hace a mano."""
-        assert set(OBJETOS_QUE_APARECEN) == set(OBJETOS_DEFENSIVOS) | {ID_CAFE, ID_BATERIA}
-        assert ID_CAFE_CHURRUMINO not in OBJETOS_QUE_APARECEN
+    def test_su_sitio_esta_dentro_del_lienzo(self):
+        x, y = obtener_objeto(ID_BATERIA).punto_suelo
+        assert 0 <= x <= ANCHO_PANTALLA and 0 <= y <= ALTO_PANTALLA
 
-    def test_cada_objeto_tiene_su_propio_sitio(self):
-        puntos = [obtener_objeto(o).punto_suelo for o in OBJETOS_QUE_APARECEN]
-        assert len(set(puntos)) == len(puntos)
+    def test_recogerla_deja_el_suelo_vacio(self):
+        suelo = suelo_con_bateria()
+        assert suelo.recoger(ID_BATERIA)
+        assert suelo.actual is None
+        assert not suelo.recoger(ID_BATERIA)
 
-    def test_ningun_sitio_se_sale_del_lienzo(self):
-        for id_objeto in OBJETOS_QUE_APARECEN:
-            x, y = obtener_objeto(id_objeto).punto_suelo
-            assert 0 <= x <= ANCHO_PANTALLA and 0 <= y <= ALTO_PANTALLA, id_objeto
-
-    def test_recoger_deja_su_sitio_vacio(self):
-        suelo = ObjetosEnElSuelo(1)
-        assert suelo.recoger(ID_PALETA)
-        assert not suelo.esta(ID_PALETA)
-        assert ID_PALETA not in suelo.objetos_en(POSICION_LAVADEROS)
-
-    def test_recoger_uno_no_se_lleva_los_demas(self):
-        suelo = ObjetosEnElSuelo(1)
-        suelo.recoger(ID_PALETA)
-        assert suelo.esta(ID_BALERO)
-
-    def test_no_se_recoge_lo_que_no_esta(self):
-        suelo = ObjetosEnElSuelo(1)
-        suelo.recoger(ID_PALETA)
-        assert not suelo.recoger(ID_PALETA)
-
-    def test_vuelve_justo_al_cumplirse_su_tiempo(self):
-        """El tiempo es fijo y conocido: no hay sorteo que lo adelante ni lo
-        retrase."""
-        suelo = ObjetosEnElSuelo(1)
-        recoger_y_esperar(suelo, ID_PALETA, suelo.reaparicion - 0.5)
-        assert not suelo.esta(ID_PALETA)
+    def test_tras_recogerla_vuelve_a_correr_la_espera(self):
+        suelo = suelo_con_bateria()
+        suelo.recoger(ID_BATERIA)
+        suelo.actualizar(suelo.espera - 0.5)
+        assert suelo.actual is None
         suelo.actualizar(0.5)
-        assert suelo.esta(ID_PALETA)
+        assert suelo.actual == ID_BATERIA
 
-    def test_la_cuenta_se_ve_bajar(self):
-        suelo = ObjetosEnElSuelo(1)
-        recoger_y_esperar(suelo, ID_PALETA, 5.0)
-        assert suelo.segundos_para_volver(ID_PALETA) == pytest.approx(suelo.reaparicion - 5.0)
+    def test_si_nadie_la_recoge_se_va(self):
+        suelo = suelo_con_bateria()
+        suelo.actualizar(suelo.permanencia - 0.5)
+        assert suelo.esta(ID_BATERIA)
+        assert suelo.segundos_para_irse() == pytest.approx(0.5)
+        suelo.actualizar(0.5)
+        assert suelo.actual is None
 
-    def test_cada_objeto_lleva_su_propia_cuenta(self):
-        """Gastar la paleta no retrasa al balero."""
-        suelo = ObjetosEnElSuelo(1)
-        recoger_y_esperar(suelo, ID_PALETA, 10.0)
-        suelo.recoger(ID_BALERO)
-        suelo.actualizar(suelo.reaparicion - 10.0)
-        assert suelo.esta(ID_PALETA)
-        assert not suelo.esta(ID_BALERO)
+    def test_con_el_suelo_vacio_no_hay_cuenta_para_irse(self):
+        assert ObjetosEnElSuelo(1).segundos_para_irse() == 0.0
 
-    def test_lo_gastado_siempre_vuelve(self):
-        """Equivocarse no deja al jugador sin respuesta para siempre: solo le
-        cuesta la espera."""
-        suelo = ObjetosEnElSuelo(1)
-        for _ in range(5):
-            recoger_y_esperar(suelo, ID_BATERIA, suelo.reaparicion)
-            assert suelo.esta(ID_BATERIA)
+    @pytest.mark.parametrize("noche", sorted(BATERIA_ESPERA_POR_NOCHE))
+    def test_cada_noche_usa_sus_tiempos(self, noche):
+        suelo = ObjetosEnElSuelo(noche)
+        assert suelo.espera == BATERIA_ESPERA_POR_NOCHE[noche]
+        assert suelo.permanencia == BATERIA_PERMANENCIA_POR_NOCHE[noche]
 
-    @pytest.mark.parametrize("noche", sorted(OBJETO_REAPARICION_POR_NOCHE))
-    def test_cada_noche_usa_su_tiempo(self, noche):
-        assert ObjetosEnElSuelo(noche).reaparicion == OBJETO_REAPARICION_POR_NOCHE[noche]
+    def test_la_personalizada_usa_los_tiempos_por_defecto(self):
+        assert espera_de_la_noche(99) == BATERIA_ESPERA_SEGUNDOS
+        assert permanencia_de_la_noche(99) == BATERIA_PERMANENCIA_SEGUNDOS
 
-    def test_la_personalizada_usa_el_tiempo_por_defecto(self):
-        assert reaparicion_de_la_noche(99) == OBJETO_REAPARICION_SEGUNDOS
-
-    def test_las_noches_tardias_hacen_esperar_mas(self):
-        tiempos = [reaparicion_de_la_noche(n) for n in range(1, 7)]
-        assert tiempos == sorted(tiempos)
-        assert tiempos[-1] > tiempos[0]
-
-
-class TestObjetoEnVuelo:
-    def test_no_cae_antes_de_tiempo(self):
-        vuelo = ObjetoEnVuelo(ID_PALETA, (100, 100), POSICION_BARRIL)
-        assert not vuelo.avanzar(ARROJO_DURACION_VUELO_SEGUNDOS / 2)
-        assert vuelo.progreso == pytest.approx(0.5)
-
-    def test_cae_al_cumplirse_el_vuelo(self):
-        vuelo = ObjetoEnVuelo(ID_PALETA, (100, 100), POSICION_BARRIL)
-        assert vuelo.avanzar(ARROJO_DURACION_VUELO_SEGUNDOS)
-        assert vuelo.progreso == 1.0
-
-    def test_el_progreso_no_se_pasa_de_uno(self):
-        vuelo = ObjetoEnVuelo(ID_PALETA, (100, 100), POSICION_BARRIL)
-        vuelo.avanzar(ARROJO_DURACION_VUELO_SEGUNDOS * 3)
-        assert vuelo.progreso == 1.0
+    def test_las_noches_tardias_aprietan_mas(self):
+        """Salen más espaciadas y duran menos tiradas."""
+        esperas = [espera_de_la_noche(n) for n in range(1, 7)]
+        permanencias = [permanencia_de_la_noche(n) for n in range(1, 7)]
+        assert esperas == sorted(esperas) and esperas[-1] > esperas[0]
+        assert permanencias == sorted(permanencias, reverse=True)
+        assert permanencias[-1] < permanencias[0]
 
 
 class TestJugador:
@@ -469,20 +378,52 @@ class TestSabotaje:
 
     def test_mirarlo_un_momento_no_las_rompe(self):
         control = ControlSabotaje()
-        control.actualizar(CAMARA_SABOTAJE_SEGUNDOS - 0.1, observado=True)
+        control.actualizar(control.aguante - 0.1, observado=True)
         assert not control.averiadas
 
-    def test_mirarlo_demasiado_seguido_las_rompe(self):
+    def test_mirarlo_demasiado_las_rompe(self):
         control = ControlSabotaje()
-        control.actualizar(CAMARA_SABOTAJE_SEGUNDOS, observado=True)
+        control.actualizar(control.aguante, observado=True)
         assert control.averiadas
+
+    @pytest.mark.parametrize("noche", sorted(CAMARA_SABOTAJE_POR_NOCHE))
+    def test_cada_noche_aguanta_lo_suyo(self, noche):
+        assert ControlSabotaje(noche).aguante == CAMARA_SABOTAJE_POR_NOCHE[noche]
+
+    def test_las_noches_tardias_y_la_personalizada_aguantan_un_segundo(self):
+        """El spec: 2 s en las noches 3 y 4, 1 s en el resto."""
+        assert aguante_de_la_noche(5) == aguante_de_la_noche(6) == CAMARA_SABOTAJE_SEGUNDOS
+        assert aguante_de_la_noche(99) == CAMARA_SABOTAJE_SEGUNDOS
+        assert CAMARA_SABOTAJE_SEGUNDOS == 1.0
+        assert CAMARA_SABOTAJE_POR_NOCHE == {3: 2.0, 4: 2.0}
 
     def test_dejar_de_mirarlo_enfria_la_presion(self):
         control = ControlSabotaje()
-        control.actualizar(4.0, observado=True)
+        control.actualizar(control.aguante / 2, observado=True)
         acumulado = control.presion
-        control.actualizar(2.0, observado=False)
-        assert control.presion < acumulado
+        control.actualizar(1.0, observado=False)
+        assert control.presion == pytest.approx(acumulado - CAMARA_SABOTAJE_RECUPERACION)
+
+    def test_los_vistazos_cortos_se_van_sumando(self):
+        """Quitarle la vista y volver enseguida no basta: se enfría más
+        despacio de lo que se calienta."""
+        control = ControlSabotaje(3)
+        for _ in range(10):
+            control.actualizar(0.5, observado=True)
+            control.actualizar(1.0, observado=False)
+        assert control.averiadas
+
+    def test_avisa_antes_de_romperlas(self):
+        control = ControlSabotaje()
+        assert not control.a_punto
+        control.actualizar(control.aguante * CAMARA_SABOTAJE_AVISO, observado=True)
+        assert control.a_punto
+        assert not control.averiadas
+
+    def test_ya_rotas_no_avisa(self):
+        control = ControlSabotaje()
+        control.actualizar(control.aguante, observado=True)
+        assert not control.a_punto
 
     def test_la_presion_no_baja_de_cero(self):
         control = ControlSabotaje()
@@ -491,13 +432,13 @@ class TestSabotaje:
 
     def test_una_vez_averiadas_siguen_asi_hasta_repararlas(self):
         control = ControlSabotaje()
-        control.actualizar(CAMARA_SABOTAJE_SEGUNDOS, observado=True)
+        control.actualizar(control.aguante, observado=True)
         control.actualizar(999.0, observado=False)
         assert control.averiadas
 
     def test_reparar_las_deja_como_nuevas(self):
         control = ControlSabotaje()
-        control.actualizar(CAMARA_SABOTAJE_SEGUNDOS, observado=True)
+        control.actualizar(control.aguante, observado=True)
         control.reparar()
         assert not control.averiadas
         assert control.presion == 0.0

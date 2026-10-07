@@ -20,7 +20,6 @@ class Accion(Enum):
     ASOMARSE = auto()
     RECOGER = auto()
     CAMBIAR_BATERIA = auto()
-    COMBINAR_CAFE = auto()
     ALTERNAR_CAMARAS = auto()
     ALTERNAR_SERVICIOS = auto()
     CONFIRMAR = auto()
@@ -40,28 +39,13 @@ ACCIONES_POR_TECLA: Dict[int, Accion] = {
     pygame.K_UP: Accion.ASOMARSE,
     pygame.K_e: Accion.RECOGER,
     pygame.K_r: Accion.CAMBIAR_BATERIA,
-    pygame.K_c: Accion.COMBINAR_CAFE,
     pygame.K_SPACE: Accion.ALTERNAR_CAMARAS,
     pygame.K_TAB: Accion.ALTERNAR_SERVICIOS,
     pygame.K_RETURN: Accion.CONFIRMAR,
     pygame.K_ESCAPE: Accion.ESCAPE,
 }
 
-# Teclas 1..7: cada una arroja siempre el mismo objeto, esté o no en el
-# inventario, para que el jugador no tenga que releer la fila cada vez.
-TECLAS_ARROJAR = (
-    pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4,
-    pygame.K_5, pygame.K_6, pygame.K_7,
-)
-
 
 def accion_de(tecla: int) -> Optional[Accion]:
     """Acción que corresponde a esa tecla, o None si no está asignada."""
     return ACCIONES_POR_TECLA.get(tecla)
-
-
-def ranura_de(tecla: int) -> Optional[int]:
-    """Ranura de inventario (0..6) de las teclas numéricas, o None."""
-    if tecla not in TECLAS_ARROJAR:
-        return None
-    return TECLAS_ARROJAR.index(tecla)

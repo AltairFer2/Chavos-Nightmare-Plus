@@ -29,6 +29,10 @@ distintas: el sabotaje de El Chavo (dominio/sabotaje.py), que tumba todo el
 circuito hasta restablecerlo desde el barril, y la interferencia de una sola
 cámara al moverse alguien delante (dominio/interferencia.py), que se arregla
 sola a los pocos segundos.
+
+Con El Chavo en la cámara que se mira, además, el monitor se vuelve
+errático (monitor_erratico.py): la imagen tiembla y el mapa se va a saltos
+con sus botones, para que escapar de su cámara antes de que la rompa cueste.
 """
 
 from typing import Optional
@@ -36,6 +40,21 @@ from typing import Optional
 import pygame
 
 from ..config.interfaz import (
+    CAMARA_AUDIO_EFECTO_SEGUNDOS,
+    CAMARA_AUDIO_ONDA_COLOR,
+    CAMARA_AUDIO_ONDA_GROSOR,
+    CAMARA_AUDIO_ONDA_PERIODO,
+    CAMARA_AUDIO_ONDA_RADIO_MAXIMO,
+    CAMARA_AUDIO_ONDAS,
+    CAMARA_DISTORSION_DESPLAZAMIENTO,
+    CAMARA_DISTORSION_SEGUNDOS,
+    CAMARA_ERRATICO_INTENSIDAD_MINIMA,
+    CAMARA_ERRATICO_MAPA_AMPLITUD,
+    CAMARA_ERRATICO_MAPA_CAMBIO_SEGUNDOS,
+    CAMARA_ERRATICO_MAPA_PERSECUCION,
+    CAMARA_ERRATICO_VISTA_AMPLITUD,
+    CAMARA_ERRATICO_VISTA_CAMBIO_SEGUNDOS,
+    CAMARA_ERRATICO_VISTA_PERSECUCION,
     CAMARA_ESTATICA_ALTO,
     CAMARA_ESTATICA_ANCHO,
     CAMARA_ESTATICA_CAMBIO_FRAMES,
@@ -59,6 +78,7 @@ from .boton_audio import BotonAudio
 from .efectos import crear_lineas_barrido, generar_frames_estatica
 from .escenas_camara import EscenasCamara
 from .mapa_camaras import MapaVecindad
+from .monitor_erratico import DesplazamientoErratico
 
 
 class SistemaCamaras:
@@ -94,8 +114,24 @@ class SistemaCamaras:
         self._indice_estatica = 0
         self._contador_estatica = 0
         self._transicion_restante = 0.0
+        # Dónde está sonando el audio de Quico y cuánto le queda a sus ondas.
+        self._camara_con_audio: Optional[str] = None
+        self._audio_restante = 0.0
+        # El tirón que da el monitor cuando Doña Florinda se mueve.
+        self._distorsion_restante = 0.0
         self._sabotaje = ControlSabotaje()
         self._interferencia = InterferenciaCamaras()
+        # Lo errático que se pone el monitor con El Chavo en pantalla.
+        self._erratico_mapa = DesplazamientoErratico(
+            CAMARA_ERRATICO_MAPA_AMPLITUD,
+            CAMARA_ERRATICO_MAPA_CAMBIO_SEGUNDOS,
+            CAMARA_ERRATICO_MAPA_PERSECUCION,
+        )
+        self._erratico_vista = DesplazamientoErratico(
+            CAMARA_ERRATICO_VISTA_AMPLITUD,
+            CAMARA_ERRATICO_VISTA_CAMBIO_SEGUNDOS,
+            CAMARA_ERRATICO_VISTA_PERSECUCION,
+        )
 
     # ------------------------------------------------------------------
     # Estado
@@ -139,12 +175,20 @@ class SistemaCamaras:
         self.activo = True
         return True
 
-    def reiniciar(self, camara_inicial: str):
+    def reiniciar(self, camara_inicial: str, numero_noche: int = 1):
         """Lo deja como al empezar una noche: bajado, sin animación a medias,
-        en la primera cámara y con todo el circuito en pie."""
+        en la primera cámara y con todo el circuito en pie. Lo que aguanta
+        El Chavo siendo observado depende de la noche."""
         self._activo = False
         self.animacion.cancelar()
         self.camara_actual = camara_inicial
+        self._sabotaje = ControlSabotaje(numero_noche)
+        self._erratico_mapa.reiniciar()
+        self._erratico_vista.reiniciar()
+        self._mapa.desplazamiento = (0, 0)
+        self._camara_con_audio = None
+        self._audio_restante = 0.0
+        self._distorsion_restante = 0.0
         self.reparar()
 
     def cambiar_camara(self, id_habitacion: str) -> bool:
@@ -178,6 +222,24 @@ class SistemaCamaras:
     def sin_senal(self, id_camara: str) -> bool:
         return self._interferencia.sin_senal(id_camara)
 
+    def sonar_audio_en(self, id_camara: str):
+        """Marca que el audio de Quico está sonando en esa cámara: mientras
+        dure, quien la mire ve las ondas."""
+        self._camara_con_audio = id_camara
+        self._audio_restante = CAMARA_AUDIO_EFECTO_SEGUNDOS
+
+    def suena_audio_en(self, id_camara: str) -> bool:
+        return self._audio_restante > 0.0 and self._camara_con_audio == id_camara
+
+    def distorsionar(self):
+        """Un tirón breve en la cámara que se esté mirando, sea cual sea.
+        Es la señal de que Doña Florinda se acaba de mover."""
+        self._distorsion_restante = CAMARA_DISTORSION_SEGUNDOS
+
+    @property
+    def distorsionada(self) -> bool:
+        return self._distorsion_restante > 0.0
+
     def actualizar(self, dt: float, animatronics=()):
         self._contador_estatica += 1
         if self._contador_estatica >= CAMARA_ESTATICA_CAMBIO_FRAMES:
@@ -185,11 +247,47 @@ class SistemaCamaras:
             self._indice_estatica = (self._indice_estatica + 1) % len(self._frames_estatica)
         if self._transicion_restante > 0.0:
             self._transicion_restante = max(0.0, self._transicion_restante - dt)
+        if self._audio_restante > 0.0:
+            self._audio_restante = max(0.0, self._audio_restante - dt)
+        if self._distorsion_restante > 0.0:
+            self._distorsion_restante = max(0.0, self._distorsion_restante - dt)
         self.animacion.actualizar(dt)
         self._interferencia.actualizar(dt)
-        self._sabotaje.actualizar(
-            dt, self.activo and self._saboteador_a_la_vista(animatronics)
-        )
+        # Solo cuenta lo que de verdad se ve: mientras el monitor sube no hay
+        # cámara en pantalla, y con un aguante de un segundo esa animación se
+        # comería el margen para reaccionar.
+        observado = self.a_la_vista and self._saboteador_a_la_vista(animatronics)
+        self._sabotaje.actualizar(dt, observado)
+        intensidad = self._intensidad_erratica(observado)
+        self._erratico_mapa.actualizar(dt, intensidad)
+        self._erratico_vista.actualizar(dt, intensidad)
+        self._mapa.desplazamiento = self._desplazamiento_del_mapa()
+
+    def _desplazamiento_del_mapa(self):
+        """El mapa está pegado a la esquina de abajo a la derecha, así que
+        los saltos hacia allá chocarían con el borde. Se mueve alrededor de un
+        centro corrido hacia arriba a la izquierda: nada más ver a El Chavo
+        el mapa ya pega un salto, y desde ahí tiene sitio para ir y venir."""
+        dx, dy = self._erratico_mapa.desplazamiento
+        intensidad = self._erratico_mapa.intensidad
+        ancho, alto = CAMARA_ERRATICO_MAPA_AMPLITUD
+        return (dx - round(ancho * intensidad), dy - round(alto * intensidad))
+
+    def _intensidad_erratica(self, observado: bool) -> float:
+        """Nada más verlo el monitor ya se descontrola, y va a peor conforme
+        se acerca a romperlo. Rotas ya no hay cámara que mover."""
+        if not observado or self.averiadas:
+            return 0.0
+        return max(CAMARA_ERRATICO_INTENSIDAD_MINIMA, self._sabotaje.proporcion)
+
+    @property
+    def erratico(self) -> bool:
+        """Si el monitor se está moviendo por culpa de El Chavo."""
+        return self._erratico_mapa.intensidad > 0.0
+
+    @property
+    def desplazamiento_mapa(self):
+        return self._mapa.desplazamiento
 
     def _saboteador_a_la_vista(self, animatronics) -> bool:
         return any(
@@ -208,9 +306,12 @@ class SistemaCamaras:
 
         self._dibujar_vista(superficie, habitacion, animatronics, fuente, idiomas)
 
+        if self.suena_audio_en(habitacion.id) and not self.averiadas:
+            self._dibujar_ondas(superficie)
+
         superficie.blit(self._lineas, (0, 0))
         superficie.blit(self._frames_estatica[self._indice_estatica], (0, 0))
-        if self._transicion_restante > 0.0:
+        if self._transicion_restante > 0.0 or self._fallando() or self.distorsionada:
             superficie.blit(self._estatica_transicion[self._indice_estatica], (0, 0))
 
         marco = self._marcos.obtener(habitacion.id, habitacion.ruta_marco)
@@ -225,6 +326,34 @@ class SistemaCamaras:
             self._boton_audio.dibujar(
                 superficie, estado_servicios, fuente, idiomas, posicion_raton
             )
+
+    def _dibujar_ondas(self, superficie: pygame.Surface):
+        """Ondas que se abren desde el centro de la cámara donde suena el
+        audio, cada una apagándose conforme crece."""
+        transcurrido = CAMARA_AUDIO_EFECTO_SEGUNDOS - self._audio_restante
+        centro = (ANCHO_PANTALLA // 2, ALTO_PANTALLA // 2)
+        for onda in range(CAMARA_AUDIO_ONDAS):
+            fase = (transcurrido / CAMARA_AUDIO_ONDA_PERIODO + onda / CAMARA_AUDIO_ONDAS) % 1.0
+            radio = int(CAMARA_AUDIO_ONDA_RADIO_MAXIMO * fase)
+            if radio <= CAMARA_AUDIO_ONDA_GROSOR:
+                continue
+            brillo = 1.0 - fase
+            color = tuple(int(canal * brillo) for canal in CAMARA_AUDIO_ONDA_COLOR)
+            pygame.draw.circle(superficie, color, centro, radio, CAMARA_AUDIO_ONDA_GROSOR)
+
+    def _desplazamiento_de_la_vista(self):
+        """Lo errático de El Chavo más, si toca, el tirón de Doña Florinda,
+        que corre la imagen a un lado y al otro."""
+        dx, dy = self._erratico_vista.desplazamiento
+        if self.distorsionada:
+            lado = 1 if self._indice_estatica % 2 == 0 else -1
+            dx += lado * CAMARA_DISTORSION_DESPLAZAMIENTO
+        return (dx, dy)
+
+    def _fallando(self) -> bool:
+        """El aviso de que El Chavo está a punto de romperlas: la estática
+        fuerte entra y sale, un cuadro sí y otro no."""
+        return self._sabotaje.a_punto and self._indice_estatica % 2 == 0
 
     def _dibujar_vista(self, superficie, habitacion, animatronics, fuente, idiomas):
         superficie.fill(COLOR_NEGRO)
@@ -247,7 +376,10 @@ class SistemaCamaras:
 
         imagen = self._escena_o_vacia(habitacion, animatronics)
         if imagen is not None:
-            superficie.blit(imagen, (0, 0))
+            # Con El Chavo en pantalla la imagen tiembla a tirones; lo que
+            # queda al descubierto por los bordes se ve negro, como un tubo
+            # que pierde el enganche.
+            superficie.blit(imagen, self._desplazamiento_de_la_vista())
         else:
             self._escribir_al_centro(superficie, fuente, idiomas, "camara_sin_imagen")
 

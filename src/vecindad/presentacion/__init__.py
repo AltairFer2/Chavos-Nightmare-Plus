@@ -8,7 +8,7 @@ tiene que ver con "qué pasa" y no con "cómo se ve", su sitio es dominio/.
 - animacion_monitor.py-> el monitor entrando y saliendo de la vista
 - mapa_camaras.py   -> el mapa de la vecindad que hace de selector de cámara
 - vista.py          -> lo que el jugador ve desde su posición, con la linterna
-- hud.py            -> noche, hora, batería, inventario y pantallas de final
+- hud.py            -> noche, hora, batería y pantallas de final
 - panel_servicios.py-> el tablero de servicios del barril
 - iconos.py         -> los iconos de objetos recortados de su hoja
 - efectos.py        -> estática y líneas de barrido, precalculadas

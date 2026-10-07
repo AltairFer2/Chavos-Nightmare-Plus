@@ -1,7 +1,8 @@
 """Servicios de utilidad que el jugador maneja desde dentro del barril.
 
 Son cuatro y cada uno tarda lo suyo: mientras un servicio está en marcha no
-se puede lanzar otro, y ese rato de espera es justo lo que hace peligroso
+se puede lanzar otro, y el jugador tampoco puede soltar el tablero (ver
+Juego._atado_al_tablero). Ese rato de espera es justo lo que hace peligroso
 usarlos con alguien encima.
 
 1. Llamar al Señor Barriga. Es lo único que quita a Don Ramón de encima,
@@ -21,9 +22,10 @@ usarlos con alguien encima.
    cambio de dejar al jugador ocupado bastante más tiempo.
 
 Aparte de los cuatro está `sonar_audio()`, que no es un servicio del panel:
-se dispara desde el monitor de cámaras, gasta una reproducción y hace
-retroceder a Doña Florinda. No deja al jugador ocupado, porque se usa
-mientras está mirando las cámaras y tiene que poder encadenarse.
+se dispara desde el monitor de cámaras, en la cámara que se está mirando,
+gasta una reproducción y atrae a Doña Florinda hacia esa cámara si es vecina
+de la suya. No deja al jugador ocupado, pero tiene una espera corta entre
+uso y uso.
 """
 
 import random
@@ -32,6 +34,7 @@ from enum import Enum, auto
 from typing import Optional
 
 from ..config.jugabilidad import (
+    AUDIO_QUICO_ESPERA_SEGUNDOS,
     BARRIGA_COOLDOWN_SEGUNDOS,
     BARRIGA_LLEGADA_MAXIMA_SEGUNDOS,
     BARRIGA_LLEGADA_MINIMA_SEGUNDOS,
@@ -67,6 +70,7 @@ class Resultado(Enum):
     EN_MARCHA = auto()  # arrancó y tardará sus segundos
     LLAMADA_EN_VANO = auto()  # se llamó al Sr. Barriga sin Don Ramón delante
     AHUYENTADO = auto()  # el servicio se llevó a quien tenía que llevarse
+    ATRAIDA = auto()  # el audio llevó a Doña Florinda a la cámara donde sonó
     SONO = auto()  # el audio sonó pero no le quitó terreno a nadie
 
 
@@ -87,6 +91,7 @@ class EstadoServicios:
     restante: float = 0.0
     total: float = 0.0
     espera_barriga: float = 0.0
+    espera_audio: float = 0.0
     usos_audio: int = 0
     usos_totales: int = 0  # con cuántos arrancó la noche, para dibujar el contador
     audio_ilimitado: bool = False
@@ -103,6 +108,7 @@ class ServiciosUtilidad:
         self._restante = 0.0
         self._total = 0.0
         self._espera_barriga = 0.0
+        self._espera_audio = 0.0
         # Cuenta regresiva hasta que el Sr. Barriga llega a cobrar tras una
         # llamada en vano. 0 significa que no hay ninguno en camino.
         self._barriga_por_llegar = 0.0
@@ -133,7 +139,10 @@ class ServiciosUtilidad:
         return True
 
     def audio_disponible(self) -> bool:
-        """Si queda alguna reproducción para sonar desde el monitor."""
+        """Si se puede sonar ya desde el monitor: queda alguna reproducción
+        y pasó la espera desde la última."""
+        if self._espera_audio > 0.0:
+            return False
         return self.audio_ilimitado or self.usos_audio > 0
 
     def estado(self) -> EstadoServicios:
@@ -142,6 +151,7 @@ class ServiciosUtilidad:
             restante=self._restante,
             total=self._total,
             espera_barriga=self._espera_barriga,
+            espera_audio=self._espera_audio,
             usos_audio=self.usos_audio,
             usos_totales=self._usos_de_la_noche,
             audio_ilimitado=self.audio_ilimitado,
@@ -193,26 +203,28 @@ class ServiciosUtilidad:
         self.usos_audio = self._usos_de_la_noche
         return self._arrancar(Servicio.REPONER_AUDIO)
 
-    def sonar_audio(self, animatronics=()) -> Resultado:
-        """Reproduce el audio de Quico desde el monitor de cámaras.
+    def sonar_audio(self, animatronics=(), id_camara: Optional[str] = None) -> Resultado:
+        """Reproduce el audio de Quico en la cámara que se está mirando.
 
-        No manda a Doña Florinda de vuelta a su casa: le quita una cámara de
-        terreno, esté donde esté. Por eso hay que usarlo varias veces, y por
-        eso deja de servir cuando ella ya llegó a la reja, que es desde donde
-        su recorrido ya no retrocede.
+        Doña Florinda va hacia donde suena, pero solo si es una cámara vecina
+        de la suya: para alejarla hay que saber dónde está y ponerle el audio
+        detrás; ponérselo delante la acerca. Desde la reja ya no hace caso.
 
-        A diferencia de los cuatro servicios del panel, no deja al jugador
-        ocupado: se usa desde las cámaras y tiene que poder encadenarse.
+        Tras cada uso hay AUDIO_QUICO_ESPERA_SEGUNDOS de espera (OCUPADO, sin
+        gastar nada). No deja al jugador ocupado: se usa desde las cámaras.
         """
+        if self._espera_audio > 0.0:
+            return Resultado.OCUPADO
         if not self.audio_ilimitado:
             if self.usos_audio <= 0:
                 return Resultado.SIN_USOS
             self.usos_audio -= 1
+        self._espera_audio = AUDIO_QUICO_ESPERA_SEGUNDOS
 
         florinda = self._buscar(animatronics, nombres.FLORINDA)
-        if florinda is None or not florinda.retroceder():
+        if florinda is None or id_camara is None or not florinda.atraer_a(id_camara):
             return Resultado.SONO
-        return Resultado.AHUYENTADO
+        return Resultado.ATRAIDA
 
     def _restablecer_todo(self) -> Resultado:
         self.usos_audio = self._usos_de_la_noche
@@ -233,8 +245,7 @@ class ServiciosUtilidad:
 
     @staticmethod
     def _buscar(animatronics, nombre: str):
-        """El del elenco que se llame así, esté donde esté. El audio de Quico
-        alcanza a Doña Florinda en cualquier cámara, no solo encima."""
+        """El del elenco que se llame así, esté donde esté."""
         for animatronic in animatronics:
             if animatronic.nombre == nombre and animatronic.activo:
                 return animatronic
@@ -255,6 +266,8 @@ class ServiciosUtilidad:
         self.barriga_letal = False
         if self._espera_barriga > 0.0:
             self._espera_barriga = max(0.0, self._espera_barriga - dt)
+        if self._espera_audio > 0.0:
+            self._espera_audio = max(0.0, self._espera_audio - dt)
 
         if self._barriga_por_llegar > 0.0:
             self._barriga_por_llegar = max(0.0, self._barriga_por_llegar - dt)
@@ -286,6 +299,7 @@ class ServiciosUtilidad:
         self._restante = 0.0
         self._total = 0.0
         self._espera_barriga = 0.0
+        self._espera_audio = 0.0
         self._barriga_por_llegar = 0.0
         self._barriga_esperando = False
         self.barriga_letal = False

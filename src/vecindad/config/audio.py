@@ -39,10 +39,21 @@ EFECTO_SUSTO = "jumpscare"
 # efectos/).
 EFECTO_LLAMADA_BARRIGA = "llamada barriga"
 
-# Efecto de que Don Ramón se va cuando el Sr. Barriga se lo lleva (subcarpeta
-# efectos/). Ocupa el sitio del aviso escrito que había antes: enterarse de
-# que la llamada sirvió es cosa de oírlo, no de leerlo.
+# Don Ramón yéndose cuando el Sr. Barriga se lo lleva (subcarpeta efectos/).
+# Ocupa el sitio del aviso escrito que había antes: enterarse de que la
+# llamada sirvió es cosa de oírlo, no de leerlo. Suena una de las diez
+# variantes al azar; si el árbol activo no tiene ninguna (el modo streamer),
+# suena EFECTO_RAMON_SE_VA.
+EFECTOS_SALIDA_RAMON = tuple(f"salida_ramon_{numero}" for numero in range(1, 11))
 EFECTO_RAMON_SE_VA = "ramon se va"
+
+# El Chavo plantándose en el patio después de romper las cámaras (subcarpeta
+# efectos/).
+EFECTO_LLEGA_CHAVO = "llega chavo"
+
+# La aparición rara (easter egg) que se cuela de vez en cuando en la partida
+# (subcarpeta efectos/).
+EFECTO_EASTER_EGG = "easter_egg"
 
 # Efecto al reponer el audio de Quico desde el panel del barril (subcarpeta
 # efectos/). Es el sonido de reparar la cinta, no la grabación en sí: esa

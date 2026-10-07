@@ -1,9 +1,11 @@
-"""Linterna del jugador: el único recurso limitado de la noche.
+"""Linterna del jugador: el único recurso limitado de la noche, y su arma.
 
-Encendida consume la batería puesta; al agotarse se apaga sola y no vuelve a
-encender hasta que el jugador cambia la batería por una de repuesto. Las
-baterías de repuesto se recogen fuera del barril (ver objetos.py), salvo las
-que ya trae puestas al empezar en las primeras noches.
+Sirve para ver y para espantar a casi todo el elenco (ver
+animatronicos/espanto.py). Encendida consume la batería puesta; al agotarse
+se apaga sola y no vuelve a encender hasta que el jugador cambia la batería
+por una de repuesto. Las baterías de repuesto se recogen fuera del barril
+(ver objetos.py), salvo las que ya trae puestas al empezar en las primeras
+noches.
 """
 
 from ..config.jugabilidad import (
@@ -61,8 +63,8 @@ class Linterna:
 
     def descargar(self):
         """Deja la batería a cero de golpe y apaga la linterna. Es el castigo
-        por alumbrar a La Chilindrina: no mata, pero deja al jugador a
-        oscuras hasta que ponga un repuesto."""
+        por alumbrarle el cuerpo a La Chilindrina fuera de su punto débil: no
+        mata, pero deja al jugador a oscuras hasta que ponga un repuesto."""
         self.carga = 0.0
         self.encendida = False
 

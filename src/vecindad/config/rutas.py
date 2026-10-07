@@ -30,6 +30,8 @@ DIR_ASSETS_UI = DIR_ASSETS / "ui"
 DIR_ASSETS_MENU = DIR_ASSETS / "menu"
 DIR_ASSETS_FUENTES = DIR_ASSETS / "fuentes"
 DIR_ASSETS_LOGO = DIR_ASSETS / "logo"
+# Imágenes de las apariciones raras (easter eggs): rare 1.png, rare 2.png...
+DIR_ASSETS_EGGS = DIR_ASSETS / "eggs"
 
 # Icono de la ventana. Es el mismo logo que lleva el .exe (ver vecindad.spec):
 # si se cambia el archivo hay que cambiarlo en los dos sitios.

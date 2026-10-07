@@ -21,11 +21,15 @@ import pytest
 
 from vecindad.app.estados import EstadoJuego
 from vecindad.config.audio import (
+    EFECTO_EASTER_EGG,
     EFECTO_ENCENDIDO_CAMARAS,
     EFECTO_INTERFERENCIA,
+    EFECTO_LLEGA_CHAVO,
     EFECTO_PASOS_DERECHA,
     EFECTO_PASOS_IZQUIERDA,
+    EFECTO_RAMON_SE_VA,
     EFECTO_SORPRESA,
+    EFECTOS_SALIDA_RAMON,
 )
 from vecindad.config.interfaz import (
     CAMARA_ENCENDIDO_SEGUNDOS,
@@ -38,23 +42,20 @@ from vecindad.config.partida import (
     TARJETA_NOCHE_SEGUNDOS,
 )
 from vecindad.config.jugabilidad import (
-    ARROJO_DURACION_VUELO_SEGUNDOS,
+    AUDIO_QUICO_ESPERA_SEGUNDOS,
     CAMARA_INTERFERENCIA_MAXIMA_SEGUNDOS,
     CAMARA_INTERFERENCIA_MINIMA_SEGUNDOS,
+    CAMARA_SABOTAJE_POR_NOCHE,
+    CAMARA_SABOTAJE_SEGUNDOS,
+    CHILINDRINA_GRACIA_SEGUNDOS,
     LINTERNA_BATERIAS_MAXIMAS,
+    SERVICIO_CAMARAS_SEGUNDOS,
 )
 from vecindad.config.ventana import ANCHO_PANTALLA
 from vecindad.dominio.animatronicos import ELENCO, nombres
-from vecindad.dominio.inventario import ORDEN_ARROJABLES
-from vecindad.dominio.objetos import (
-    ID_BALERO,
-    ID_BATERIA,
-    ID_CAFE_CHURRUMINO,
-    ID_PALETA,
-    ID_PELOTA_CUADRADA,
-    ID_PELOTA_REDONDA,
-    obtener_objeto,
-)
+from vecindad.dominio.aparicion_rara import AparicionesRaras
+from vecindad.dominio.objetos import ID_BATERIA, ObjetosEnElSuelo, obtener_objeto
+from vecindad.dominio.servicios import Servicio
 from vecindad.presentacion.hud import RECT_TIRA_BAJAR, RECT_TIRA_CAMARAS
 from vecindad.presentacion.inicio_noche import HORA_DE_ARRANQUE
 from vecindad.mundo.posiciones import (
@@ -199,106 +200,74 @@ def _correr(juego, segundos: float):
 
 
 class TestYaNoHayTregua:
-    """Antes, quien se quitaba con un objeto no podía matar hasta que el
-    sorteo del suelo le diera al jugador la respuesta. Ya no hay sorteo:
-    cada objeto está en su sitio o a punto de volver, así que no tener con
-    qué responder es haberlo gastado mal."""
+    """Nadie espera a que el jugador tenga con qué responder: la respuesta
+    es la linterna, y quedarse sin batería o no atinarle es cosa suya."""
 
-    def test_quico_ataca_aunque_no_lleve_la_pelota(self, juego, plantar_delante):
+    def test_quico_ataca_si_no_se_le_espanta(self, juego, plantar_delante):
         plantar_delante(nombres.QUICO)
         _correr(juego, 2.0)
         assert not _sigue_jugando(juego)
         assert juego.noche.derrota.nombre_atacante == nombres.QUICO
 
 
-class TestArrojarConPunteria:
-    """El objeto vuela adonde apunta el ratón y hace efecto al caer."""
-
-    @pytest.fixture
-    def apuntar(self, juego, monkeypatch):
-        def _apuntar(punto):
-            monkeypatch.setattr(juego.gestor_pantalla, "posicion_en_lienzo", lambda _: punto)
-            juego.punto_luz = punto
-
-        return _apuntar
+class TestEspantarConLaLinterna:
+    """La linterna como arma, en la partida de verdad: el haz sale del ratón
+    y hay que sostenerlo sobre el punto débil hasta que se vaya."""
 
     @pytest.fixture
     def quico_delante(self, juego, plantar_delante):
         quico = plantar_delante(nombres.QUICO)
         quico.segundos_para_atacar = MARGEN_INALCANZABLE
+        juego.jugador.posicion = POSICION_BARRIL
+        juego.linterna.reiniciar(0)
+        juego.linterna.encendida = True
         return quico
 
     @staticmethod
-    def _arrojar(juego, id_objeto):
-        juego.inventario.guardar(id_objeto)
-        juego._arrojar(ORDEN_ARROJABLES.index(id_objeto))
+    def _seguir_el_punto(juego, monkeypatch, animatronic):
+        """El ratón va siempre sobre su punto débil (o a su torso mientras
+        el punto todavía no existe)."""
+        def donde_apunta(_):
+            punto = juego.espanto.punto_de(animatronic, POSICION_BARRIL)
+            return punto if punto is not None else animatronic.punto_torso_en(POSICION_BARRIL)
 
-    def test_apuntarle_se_lo_lleva(self, juego, quico_delante, apuntar):
-        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
-        self._arrojar(juego, ID_PELOTA_REDONDA)
-        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
+        monkeypatch.setattr(juego.gestor_pantalla, "posicion_en_lienzo", donde_apunta)
+
+    def test_sostenerle_la_luz_en_el_punto_lo_espanta(self, juego, monkeypatch, quico_delante):
+        self._seguir_el_punto(juego, monkeypatch, quico_delante)
+        _correr(juego, quico_delante.segundos_para_espantar() + 0.2)
         assert not quico_delante.esta_acechando()
-        assert juego.objeto_en_vuelo is None
+        assert _sigue_jugando(juego)
 
-    def test_hace_efecto_al_caer_y_no_al_soltarlo(self, juego, quico_delante, apuntar):
-        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
-        self._arrojar(juego, ID_PELOTA_REDONDA)
-        juego._actualizar(FOTOGRAMA)
-        assert quico_delante.esta_acechando()
-        assert juego.objeto_en_vuelo is not None
+    def test_espantarlo_gasta_bateria(self, juego, monkeypatch, quico_delante):
+        self._seguir_el_punto(juego, monkeypatch, quico_delante)
+        _correr(juego, quico_delante.segundos_para_espantar() + 0.2)
+        assert juego.linterna.carga < 1.0
 
-    def test_apuntar_lejos_falla_y_lo_gasta(self, juego, quico_delante, apuntar):
-        x, y = quico_delante.punto_torso_en(POSICION_BARRIL)
-        apuntar((x + quico_delante.semiejes_acierto()[0] + 50, y))
-        self._arrojar(juego, ID_PELOTA_REDONDA)
-        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
-        assert quico_delante.esta_acechando()
-        assert not juego.inventario.tiene(ID_PELOTA_REDONDA)
-        assert juego.aviso.texto == juego.idiomas.t(
-            "arrojo_fallado",
-            objeto=juego.idiomas.t(obtener_objeto(ID_PELOTA_REDONDA).clave_texto),
-        )
-
-    def test_darle_con_lo_que_no_es_suyo_avisa_a_quien_le_dio(
-        self, juego, quico_delante, apuntar
-    ):
-        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
-        self._arrojar(juego, ID_PALETA)
-        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
-        assert quico_delante.esta_acechando()
-        assert nombres.QUICO in juego.aviso.texto
-
-    def test_mientras_uno_vuela_no_sale_otro(self, juego, quico_delante, apuntar):
-        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
-        self._arrojar(juego, ID_PELOTA_REDONDA)
-        self._arrojar(juego, ID_PELOTA_CUADRADA)
-        assert juego.inventario.tiene(ID_PELOTA_CUADRADA)
-
-    def test_cada_noche_empieza_sin_nada_en_el_aire(self, juego, quico_delante, apuntar):
-        apuntar(quico_delante.punto_torso_en(POSICION_BARRIL))
-        self._arrojar(juego, ID_PELOTA_REDONDA)
-        empezar_noche(juego)
-        assert juego.objeto_en_vuelo is None
-
-    def test_a_jaimico_hay_que_alumbrarlo_cuando_le_llega(
-        self, juego, plantar_delante, apuntar
-    ):
-        jaimico = plantar_delante(nombres.JAIMICO)
-        jaimico.segundos_para_atacar = MARGEN_INALCANZABLE
-        apuntar(jaimico.punto_torso_en(POSICION_BARRIL))
-        juego.linterna.encendida = True
-        self._arrojar(juego, ID_CAFE_CHURRUMINO)
-        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
-        assert not jaimico.esta_acechando()
-
-    def test_a_oscuras_jaimico_ignora_su_cafe(self, juego, plantar_delante, apuntar):
-        jaimico = plantar_delante(nombres.JAIMICO)
-        jaimico.segundos_para_atacar = MARGEN_INALCANZABLE
-        apuntar(jaimico.punto_torso_en(POSICION_BARRIL))
+    def test_con_la_linterna_apagada_no_se_va(self, juego, monkeypatch, quico_delante):
+        self._seguir_el_punto(juego, monkeypatch, quico_delante)
         juego.linterna.encendida = False
-        self._arrojar(juego, ID_CAFE_CHURRUMINO)
-        _correr(juego, ARROJO_DURACION_VUELO_SEGUNDOS)
-        assert jaimico.esta_acechando()
+        _correr(juego, quico_delante.segundos_para_espantar() + 0.2)
+        assert quico_delante.esta_acechando()
+
+    def test_apuntarle_al_bulto_no_basta(self, juego, monkeypatch, quico_delante):
+        """El haz de lleno sobre él no sirve: es el punto lo que cuenta."""
+        x, y = quico_delante.punto_torso_en(POSICION_BARRIL)
+        lejos_del_cuerpo = (x + 300, y)
+        monkeypatch.setattr(juego.gestor_pantalla, "posicion_en_lienzo", lambda _: lejos_del_cuerpo)
+        _correr(juego, quico_delante.segundos_para_espantar() + 0.2)
+        assert quico_delante.esta_acechando()
+
+    def test_cada_noche_empieza_sin_nada_sostenido(self, juego, monkeypatch, quico_delante):
+        self._seguir_el_punto(juego, monkeypatch, quico_delante)
+        _correr(juego, quico_delante.segundos_para_espantar() / 2)
+        assert juego.espanto.progreso_de(quico_delante) > 0.0
+        empezar_noche(juego)
+        assert juego.espanto.progreso_de(quico_delante) == 0.0
+
+    def test_ya_no_hay_teclas_de_arrojar(self, juego, quico_delante):
+        juego._procesar_tecla(pygame.K_1)
+        assert quico_delante.esta_acechando()
 
 
 class TestLosPasosAvisanDeQuienLlega:
@@ -640,9 +609,9 @@ class TestElMonitorEntraYSale:
 
 
 class TestLaSenalSeCaeAlMoverse:
-    """Si a alguien le toca moverse justo mientras se le está mirando, esa
-    cámara se cae unos segundos: se oye que se fue, pero no se ve hacia
-    dónde."""
+    """Si alguien entra o sale de la cámara que se está mirando, esa cámara
+    se cae unos segundos: se oye que alguien se movió, pero no se ve quién
+    ni hacia dónde."""
 
     CAMARA_VIGILADA = "casa_florinda"
 
@@ -670,7 +639,7 @@ class TestLaSenalSeCaeAlMoverse:
         objetivo = next(a for a in juego.noche.animatronics if a.nombre == nombre)
         vigilados = juego._quienes_se_ven()
         objetivo.habitacion_actual = destino
-        juego._cortar_la_senal_de_quien_se_movio(vigilados)
+        juego._cortar_la_senal_si_cambio_quien_se_ve(vigilados)
         return objetivo
 
     def test_irse_de_la_camara_mirada_la_tumba(self, vigilando, escuchar):
@@ -691,12 +660,13 @@ class TestLaSenalSeCaeAlMoverse:
         assert not vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
         assert escuchar == []
 
-    def test_llegar_a_la_camara_mirada_no_la_tumba(self, vigilando, escuchar):
-        """Lo que corta la señal es que se vaya quien estaba dentro; ver
-        llegar a alguien es justo lo que se busca vigilando."""
+    def test_llegar_a_la_camara_mirada_tambien_la_tumba(self, vigilando, escuchar):
+        """Antes solo la cortaba quien se iba. Ahora también quien llega:
+        se oye que alguien entró, pero no se ve quién hasta que vuelva la
+        señal."""
         self._mover(vigilando, nombres.CHILINDRINA, self.CAMARA_VIGILADA)
-        assert not vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
-        assert escuchar == []
+        assert vigilando.sistema_camaras.sin_senal(self.CAMARA_VIGILADA)
+        assert escuchar == [EFECTO_INTERFERENCIA]
 
     def test_la_senal_vuelve_sola(self, vigilando):
         """Esta avería no se restablece desde el barril: se arregla sola."""
@@ -736,68 +706,170 @@ class TestLaSenalSeCaeAlMoverse:
         assert EFECTO_INTERFERENCIA in escuchar
 
 
+def _tirar_bateria(juego):
+    """Deja la batería tirada en los Lavaderos sin esperar su turno."""
+    suelo = ObjetosEnElSuelo(juego.noche.numero)
+    suelo.actualizar(suelo.espera)
+    juego.objetos_en_suelo = suelo
+
+
 class TestRecogerDelSuelo:
-    """Cada objeto tiene su sitio en los Lavaderos. Se recoge alumbrándolo y
-    pulsando E, y no se lleva más de uno de cada a la vez."""
+    """Lo único que se encuentra son baterías, siempre en el mismo sitio de
+    los Lavaderos. Se recogen alumbrándolas y pulsando E."""
 
     @staticmethod
-    def _en_los_lavaderos(juego, apuntando_a):
+    def _en_los_lavaderos(juego):
         empezar_noche(juego)
         for animatronic in juego.noche.animatronics:
             animatronic.activo = False
+        _tirar_bateria(juego)
         juego.jugador.posicion = POSICION_LAVADEROS
         juego.linterna.encendida = True
-        juego.punto_luz = obtener_objeto(apuntando_a).punto_suelo
+        juego.linterna.baterias_repuesto = 0
+        juego.punto_luz = obtener_objeto(ID_BATERIA).punto_suelo
 
-    def test_alumbrarlo_y_recogerlo(self, juego):
-        self._en_los_lavaderos(juego, ID_BALERO)
+    def test_la_noche_arranca_sin_nada_tirado(self, juego):
+        empezar_noche(juego)
+        assert juego.objetos_en_suelo.actual is None
+
+    def test_la_bateria_va_al_bolsillo(self, juego):
+        self._en_los_lavaderos(juego)
         juego._recoger_objeto()
-        assert juego.inventario.tiene(ID_BALERO)
-        assert not juego.objetos_en_suelo.esta(ID_BALERO)
+        assert juego.linterna.baterias_repuesto == 1
+        assert not juego.objetos_en_suelo.esta(ID_BATERIA)
 
     def test_a_oscuras_no_se_recoge_nada(self, juego):
-        self._en_los_lavaderos(juego, ID_BALERO)
+        self._en_los_lavaderos(juego)
         juego.linterna.encendida = False
         juego._recoger_objeto()
-        assert not juego.inventario.tiene(ID_BALERO)
+        assert juego.linterna.baterias_repuesto == 0
 
     def test_desde_el_barril_no_se_recoge_nada(self, juego):
-        self._en_los_lavaderos(juego, ID_BALERO)
+        self._en_los_lavaderos(juego)
         juego.jugador.posicion = POSICION_BARRIL
         juego._recoger_objeto()
-        assert not juego.inventario.tiene(ID_BALERO)
+        assert juego.linterna.baterias_repuesto == 0
 
-    def test_se_recoge_el_que_esta_en_el_centro_del_haz(self, juego):
-        """El haz alcanza a varios a la vez; se lleva el que apunta."""
-        for id_objeto in (ID_PALETA, ID_BALERO, ID_PELOTA_REDONDA):
-            self._en_los_lavaderos(juego, id_objeto)
-            assert juego._objeto_a_la_vista() == id_objeto
-
-    def test_no_se_lleva_dos_iguales(self, juego):
-        self._en_los_lavaderos(juego, ID_BALERO)
-        juego._recoger_objeto()
-        juego.objetos_en_suelo.actualizar(juego.objetos_en_suelo.reaparicion)
-        juego._recoger_objeto()
-        assert juego.inventario.cantidad(ID_BALERO) == 1
-        assert juego.objetos_en_suelo.esta(ID_BALERO)
+    def test_hay_que_alumbrar_su_sitio(self, juego):
+        self._en_los_lavaderos(juego)
+        x, y = obtener_objeto(ID_BATERIA).punto_suelo
+        juego.punto_luz = (x - 600, y)
+        assert juego._objeto_a_la_vista() is None
+        juego.punto_luz = (x, y)
+        assert juego._objeto_a_la_vista() == ID_BATERIA
 
     def test_con_el_bolsillo_lleno_la_bateria_se_queda(self, juego):
-        self._en_los_lavaderos(juego, ID_BATERIA)
+        self._en_los_lavaderos(juego)
         juego.linterna.baterias_repuesto = LINTERNA_BATERIAS_MAXIMAS
         juego._recoger_objeto()
         assert juego.objetos_en_suelo.esta(ID_BATERIA)
 
-    def test_la_bateria_va_al_bolsillo(self, juego):
-        self._en_los_lavaderos(juego, ID_BATERIA)
-        juego.linterna.baterias_repuesto = 0
+    def test_tras_recogerla_sale_otra_con_el_paso_de_la_noche(self, juego):
+        self._en_los_lavaderos(juego)
         juego._recoger_objeto()
-        assert juego.linterna.baterias_repuesto == 1
+        assert juego.objetos_en_suelo.actual is None
+        _correr(juego, juego.objetos_en_suelo.espera)
+        assert juego.objetos_en_suelo.actual == ID_BATERIA
 
-    def test_lo_recogido_vuelve_con_el_paso_de_la_noche(self, juego):
-        self._en_los_lavaderos(juego, ID_BALERO)
-        juego._recoger_objeto()
-        _correr(juego, juego.objetos_en_suelo.reaparicion)
-        assert juego.objetos_en_suelo.esta(ID_BALERO)
+    def test_si_no_la_recoge_se_va(self, juego):
+        self._en_los_lavaderos(juego)
+        _correr(juego, juego.objetos_en_suelo.permanencia)
+        assert not juego.objetos_en_suelo.esta(ID_BATERIA)
+
+
+class TestAtadoAlTablero:
+    """Mientras un servicio restablece algo, el jugador no suelta el
+    tablero: ni lo baja, ni cambia al monitor, ni se asoma."""
+
+    @pytest.fixture
+    def restableciendo(self, juego):
+        empezar_noche(juego)
+        for animatronic in juego.noche.animatronics:
+            animatronic.activo = False
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        juego.panel_servicios.activo = True
+        juego.aviso.limpiar()
+        juego.servicios.usar(Servicio.CAMARAS, juego.noche.animatronics)
+        assert juego.servicios.ocupado
+        return juego
+
+    def test_no_se_baja_el_tablero(self, restableciendo):
+        restableciendo._bajar_paneles()
+        assert restableciendo.panel_servicios.activo
+
+    def test_avisa_por_que_no_se_puede(self, restableciendo):
+        restableciendo._bajar_paneles()
+        assert restableciendo.aviso.texto == restableciendo.idiomas.t("servicio_sin_terminar")
+
+    def test_ni_pasando_el_raton_por_la_pestana(self, restableciendo):
+        restableciendo.punto_luz = RECT_TIRA_BAJAR.center
+        restableciendo._atender_tiras()
+        assert restableciendo.panel_servicios.activo
+
+    def test_ni_con_el_clic_en_la_pestana(self, restableciendo):
+        restableciendo._procesar_click(RECT_TIRA_BAJAR.center)
+        assert restableciendo.panel_servicios.activo
+
+    def test_ni_con_la_tecla_del_tablero(self, restableciendo):
+        restableciendo._procesar_tecla(pygame.K_TAB)
+        assert restableciendo.panel_servicios.activo
+
+    def test_no_se_cambia_a_las_camaras(self, restableciendo):
+        restableciendo._procesar_tecla(pygame.K_SPACE)
+        assert restableciendo.panel_servicios.activo
+        assert not restableciendo.sistema_camaras.activo
+
+    def test_no_se_asoma(self, restableciendo):
+        restableciendo._asomarse()
+        assert restableciendo.jugador.esta_escondido
+
+    def test_al_terminar_ya_se_puede_bajar(self, restableciendo):
+        _correr(restableciendo, SERVICIO_CAMARAS_SEGUNDOS)
+        assert not restableciendo.servicios.ocupado
+        restableciendo._bajar_paneles()
+        assert not restableciendo.panel_servicios.activo
+
+    def test_la_llamada_al_senor_barriga_no_ata(self, juego):
+        """Es inmediata: no hay nada que esperar."""
+        empezar_noche(juego)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        juego.panel_servicios.activo = True
+        juego.servicios.usar(Servicio.BARRIGA, juego.noche.animatronics)
+        juego._bajar_paneles()
+        assert not juego.panel_servicios.activo
+
+
+class TestElChavoRompeLasCamaras:
+    """Mirarlo uno o dos segundos en el monitor basta para que las rompa."""
+
+    @staticmethod
+    def _mirando_al_chavo(juego, noche):
+        empezar_noche(juego, noche)
+        chavo = next(a for a in juego.noche.animatronics if a.nombre == nombres.CHAVO)
+        for animatronic in juego.noche.animatronics:
+            animatronic.activo = animatronic is chavo
+        chavo.habitacion_actual = juego.sistema_camaras.camara_actual
+        juego.sistema_camaras.activo = True
+        juego.sistema_camaras.animacion.cancelar()
+
+    @staticmethod
+    def _mirar(juego, segundos):
+        for _ in range(int(segundos / FOTOGRAMA)):
+            juego.sistema_camaras.actualizar(FOTOGRAMA, juego.noche.animatronics)
+
+    @pytest.mark.parametrize("noche", (5, 6))
+    def test_en_las_ultimas_noches_basta_un_segundo(self, juego, noche):
+        self._mirando_al_chavo(juego, noche)
+        self._mirar(juego, CAMARA_SABOTAJE_SEGUNDOS + 0.05)
+        assert juego.sistema_camaras.averiadas
+
+    @pytest.mark.parametrize("noche", sorted(CAMARA_SABOTAJE_POR_NOCHE))
+    def test_en_las_noches_3_y_4_aguanta_su_tiempo(self, juego, noche):
+        self._mirando_al_chavo(juego, noche)
+        self._mirar(juego, CAMARA_SABOTAJE_POR_NOCHE[noche] - 0.2)
+        assert not juego.sistema_camaras.averiadas
+        self._mirar(juego, 0.3)
+        assert juego.sistema_camaras.averiadas
 
 
 class TestElSobresaltoAlVerlos:
@@ -1006,10 +1078,9 @@ class TestLaEntradaDeLaNoche:
 
 
 class TestAlumbrarALaChilindrina:
-    """Su regla: jumpscare, la batería entera y nada más. Ni derrota, ni
-    interrupción, ni aviso. Este era el fallo que llegaba al jugador: la
-    partida se cortaba con 'Alumbraste a La Chilindrina'.
-    """
+    """Su regla: la luz no la mata, se la espanta como a los demás, y
+    alumbrarle el cuerpo fuera del punto débil más de un momento cuesta la
+    batería entera. Ni derrota, ni interrupción, ni aviso."""
 
     @pytest.mark.parametrize("id_posicion", VISTAS)
     def test_no_manda_al_game_over(self, juego, alumbrar, id_posicion):
@@ -1017,22 +1088,29 @@ class TestAlumbrarALaChilindrina:
         assert _sigue_jugando(juego)
         assert juego.noche.derrota.nombre_atacante == ""
 
+    def test_un_vistazo_no_cuesta_la_bateria(self, juego, alumbrar):
+        """Hay un momento de gracia para encontrar el punto."""
+        alumbrar(nombres.CHILINDRINA)
+        assert juego.linterna.carga > 0.0
+
     @pytest.mark.parametrize("id_posicion", VISTAS)
-    def test_deja_la_linterna_en_cero(self, juego, alumbrar, id_posicion):
-        alumbrar(nombres.CHILINDRINA, id_posicion)
+    def test_fallarle_el_punto_deja_la_linterna_en_cero(
+        self, juego, alumbrar, monkeypatch, id_posicion
+    ):
+        chilindrina = alumbrar(nombres.CHILINDRINA, id_posicion)
+        x, y = chilindrina.punto_torso_en(id_posicion)
+
+        def lejos_del_punto(_):
+            # Sobre su cuerpo, en el extremo más alejado del punto débil.
+            punto = juego.espanto.punto_de(chilindrina, id_posicion) or (x, y)
+            return max(((x, y - 80), (x, y), (x, y + 80)),
+                       key=lambda c: (c[0] - punto[0]) ** 2 + (c[1] - punto[1]) ** 2)
+
+        monkeypatch.setattr(juego.gestor_pantalla, "posicion_en_lienzo", lejos_del_punto)
+        _correr(juego, CHILINDRINA_GRACIA_SEGUNDOS + 0.1)
         assert juego.linterna.carga == 0.0
         assert not juego.linterna.encendida
-
-    def test_no_saca_ningun_aviso(self, juego, alumbrar):
-        """Se entera porque se quedó a oscuras, no porque se lo escriban."""
-        alumbrar(nombres.CHILINDRINA)
         assert juego.aviso.texto == ""
-
-    def test_no_se_la_quita_de_encima(self, juego, alumbrar):
-        """La luz es el castigo, no la contramedida: para que se vaya hay que
-        darle su paleta o su balero."""
-        chilindrina = alumbrar(nombres.CHILINDRINA)
-        assert chilindrina.esta_acechando()
 
     def test_verla_en_el_monitor_no_cuesta_bateria(self, juego, alumbrar):
         """Dentro del barril con las cámaras levantadas el haz no sale al
@@ -1074,3 +1152,270 @@ class TestAlumbrarAlResto:
         """Solo el gasto normal del fotograma: nadie más se la vacía."""
         alumbrar(nombre)
         assert juego.linterna.carga > 0.0
+
+
+class TestReintentarTrasMorir:
+    """Al perder, la pantalla de derrota ofrece reintentar la misma noche
+    (marcado por defecto) o volver al menú."""
+
+    @staticmethod
+    def _morir(juego, numero=NOCHE_CON_TODOS, personalizada=False, niveles=None,
+               nueva_partida=False):
+        juego.iniciar_noche(SimpleNamespace(
+            numero=numero, personalizada=personalizada,
+            niveles_ia=niveles or {}, nueva_partida=nueva_partida,
+        ))
+        juego.periodico.termino = True
+        juego.tarjeta_noche.termino = True
+        while not juego.gestor_estados.jugando():
+            juego._actualizar(FOTOGRAMA)
+        juego._perder(nombres.QUICO, "game_over_motivo")
+        for _ in range(int(10 / FOTOGRAMA)):
+            if juego.gestor_estados.termino_en_derrota():
+                return
+            juego._actualizar(FOTOGRAMA)
+        pytest.fail("no llegó a la pantalla de derrota")
+
+    @staticmethod
+    def _tecla(juego, tecla):
+        juego._manejar_evento_derrota(pygame.event.Event(pygame.KEYDOWN, key=tecla), None)
+        juego._atender_derrota()
+
+    def test_reintentar_viene_marcado(self, juego):
+        self._morir(juego)
+        assert juego.menu_derrota.indice_seleccionado == 0
+
+    def test_enter_reintenta_la_misma_noche(self, juego):
+        self._morir(juego, numero=4)
+        self._tecla(juego, pygame.K_RETURN)
+        assert juego.gestor_estados.estado is EstadoJuego.TARJETA_NOCHE
+        assert juego.noche.numero == 4
+        assert juego.noche.derrota.nombre_atacante == ""
+
+    def test_reintentar_deja_la_noche_como_nueva(self, juego):
+        self._morir(juego)
+        self._tecla(juego, pygame.K_RETURN)
+        assert all(not a.esta_acechando() for a in juego.noche.animatronics)
+        assert juego.temporizador.hora_actual() == 12
+
+    def test_reintentar_tras_nuevo_juego_no_repite_el_periodico(self, juego):
+        self._morir(juego, numero=1, nueva_partida=True)
+        self._tecla(juego, pygame.K_RETURN)
+        assert juego.gestor_estados.estado is EstadoJuego.TARJETA_NOCHE
+
+    def test_la_personalizada_se_reintenta_con_sus_niveles(self, juego):
+        niveles = {nombres.QUICO: 15, nombres.CHAVO: 4}
+        self._morir(juego, numero=NOCHE_EXTRA, personalizada=True, niveles=niveles)
+        self._tecla(juego, pygame.K_RETURN)
+        assert juego.noche.personalizada
+        quico = next(a for a in juego.noche.animatronics if a.nombre == nombres.QUICO)
+        assert quico.nivel_ia == 15
+
+    def test_abajo_y_enter_vuelve_al_menu(self, juego):
+        self._morir(juego)
+        self._tecla(juego, pygame.K_DOWN)
+        self._tecla(juego, pygame.K_RETURN)
+        assert juego.gestor_estados.en_menu()
+
+    def test_clic_en_reintentar(self, juego):
+        self._morir(juego)
+        rect = juego.menu_derrota._rects()[0]
+        evento = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=rect.center)
+        juego._manejar_evento_derrota(evento, rect.center)
+        juego._atender_derrota()
+        assert juego.gestor_estados.estado is EstadoJuego.TARJETA_NOCHE
+
+    def test_esc_sigue_cerrando_el_juego(self, juego):
+        self._morir(juego)
+        try:
+            self._tecla(juego, pygame.K_ESCAPE)
+            assert not juego._ejecutando
+        finally:
+            juego._ejecutando = True
+
+    def test_cada_derrota_vuelve_a_marcar_reintentar(self, juego):
+        self._morir(juego)
+        self._tecla(juego, pygame.K_DOWN)
+        self._tecla(juego, pygame.K_RETURN)
+        self._morir(juego)
+        assert juego.menu_derrota.indice_seleccionado == 0
+
+
+@pytest.fixture
+def efectos(juego, monkeypatch):
+    """Lo que va sonando, en orden, sin pasar por la tarjeta de sonido."""
+    sonados = []
+    monkeypatch.setattr(juego.audio, "reproducir_efecto", lambda nombre, *a: sonados.append(nombre))
+    monkeypatch.setattr(juego.audio, "reproducir_efecto_camara", lambda nombre: sonados.append(nombre))
+
+    def al_azar(nombres, *a):
+        sonados.append(nombres[0])
+        return nombres[0]
+
+    monkeypatch.setattr(juego.audio, "reproducir_efecto_al_azar", al_azar)
+    return sonados
+
+
+def _solo(juego, nombre):
+    """Deja activo solo a ese personaje y devuelve su ficha viva."""
+    elegido = next(a for a in juego.noche.animatronics if a.nombre == nombre)
+    for animatronic in juego.noche.animatronics:
+        animatronic.activo = animatronic is elegido
+    return elegido
+
+
+class TestElChavoLlegaAlRomperLasCamaras:
+    @pytest.fixture
+    def mirandolo(self, juego):
+        empezar_noche(juego, 6)
+        chavo = _solo(juego, nombres.CHAVO)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        juego.sistema_camaras.activo = True
+        juego.sistema_camaras.animacion.cancelar()
+        chavo.habitacion_actual = juego.sistema_camaras.camara_actual = "casa_paty"
+        return chavo
+
+    def test_al_romperlas_aparece_en_el_patio(self, juego, mirandolo, efectos):
+        _correr(juego, CAMARA_SABOTAJE_SEGUNDOS + 0.1)
+        assert juego.sistema_camaras.averiadas
+        assert mirandolo.esta_acechando()
+
+    def test_suena_su_llegada(self, juego, mirandolo, efectos):
+        _correr(juego, CAMARA_SABOTAJE_SEGUNDOS + 0.1)
+        assert efectos.count(EFECTO_LLEGA_CHAVO) == 1
+
+    def test_sin_romperlas_no_llega(self, juego, mirandolo, efectos):
+        _correr(juego, CAMARA_SABOTAJE_SEGUNDOS / 2)
+        assert not mirandolo.esta_acechando()
+        assert EFECTO_LLEGA_CHAVO not in efectos
+
+    def test_si_ya_estaba_en_el_patio_no_vuelve_a_llegar(self, juego, efectos):
+        empezar_noche(juego, 6)
+        chavo = _solo(juego, nombres.CHAVO)
+        chavo.irrumpir()
+        espera = chavo.segundos_para_atacar = 50.0
+        juego._llega_el_chavo()
+        assert chavo.segundos_para_atacar == espera
+        assert efectos == []
+
+    def test_hay_que_enfrentarlo(self, juego, mirandolo, efectos):
+        """Fuera del barril, si no se le espanta, ataca."""
+        _correr(juego, CAMARA_SABOTAJE_SEGUNDOS + 0.1)
+        juego.sistema_camaras.activo = False
+        juego.jugador.posicion = POSICION_BARRIL
+        _correr(juego, mirandolo.segundos_para_atacar + 0.5)
+        assert not _sigue_jugando(juego)
+        assert juego.noche.derrota.nombre_atacante == nombres.CHAVO
+
+
+class TestDonRamonSeVa:
+    def test_suena_una_de_sus_salidas(self, juego, plantar_delante, efectos, monkeypatch):
+        ramon = plantar_delante(nombres.DON_RAMON)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        juego.panel_servicios.activo = True
+        monkeypatch.setattr(juego.panel_servicios, "boton_en", lambda _: Servicio.BARRIGA)
+        juego._usar_servicio((0, 0))
+        assert not ramon.esta_acechando()
+        assert EFECTOS_SALIDA_RAMON[0] in efectos
+
+    def test_son_diez_variantes(self):
+        assert EFECTOS_SALIDA_RAMON == tuple(f"salida_ramon_{n}" for n in range(1, 11))
+
+    def test_sin_variantes_suena_la_de_siempre(self, juego, plantar_delante, monkeypatch):
+        sonados = []
+        monkeypatch.setattr(juego.audio, "reproducir_efecto", lambda nombre, *a: sonados.append(nombre))
+        monkeypatch.setattr(juego.audio, "reproducir_efecto_al_azar", lambda *a: None)
+        plantar_delante(nombres.DON_RAMON)
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        juego.panel_servicios.activo = True
+        monkeypatch.setattr(juego.panel_servicios, "boton_en", lambda _: Servicio.BARRIGA)
+        juego._usar_servicio((0, 0))
+        assert EFECTO_RAMON_SE_VA in sonados
+
+
+class TestAudioDeQuicoEnElMonitor:
+    @pytest.fixture
+    def florinda_en_popis(self, juego):
+        empezar_noche(juego, 6)
+        florinda = _solo(juego, nombres.FLORINDA)
+        florinda.habitacion_actual = "casa_popis"
+        juego._florinda_estaba = "casa_popis"
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        juego.sistema_camaras.activo = True
+        juego.sistema_camaras.animacion.cancelar()
+        return florinda
+
+    def _sonar_en(self, juego, camara):
+        juego.sistema_camaras.camara_actual = camara
+        juego._sonar_audio_de_quico()
+
+    def test_suena_en_la_camara_que_se_mira_y_la_atrae(self, juego, florinda_en_popis, efectos):
+        self._sonar_en(juego, "casa_godinez")
+        assert florinda_en_popis.habitacion_actual == "casa_godinez"
+        assert juego.sistema_camaras.suena_audio_en("casa_godinez")
+
+    def test_las_ondas_solo_se_ven_en_esa_camara(self, juego, florinda_en_popis, efectos):
+        self._sonar_en(juego, "casa_paty")
+        assert juego.sistema_camaras.suena_audio_en("casa_paty")
+        assert not juego.sistema_camaras.suena_audio_en("casa_godinez")
+
+    def test_lejos_de_ella_no_se_mueve(self, juego, florinda_en_popis, efectos):
+        self._sonar_en(juego, "casa_paty")
+        assert florinda_en_popis.habitacion_actual == "casa_popis"
+
+    def test_al_entrar_en_la_camara_mirada_se_pierde_la_senal(self, juego, florinda_en_popis, efectos):
+        self._sonar_en(juego, "casa_godinez")
+        assert juego.sistema_camaras.sin_senal("casa_godinez")
+        assert EFECTO_INTERFERENCIA in efectos
+
+    def test_hay_que_esperar_para_volver_a_usarlo(self, juego, florinda_en_popis, efectos):
+        self._sonar_en(juego, "casa_godinez")
+        efectos.clear()
+        self._sonar_en(juego, "casa_florinda")
+        assert florinda_en_popis.habitacion_actual == "casa_godinez"
+        assert efectos == []
+
+    def test_pasada_la_espera_vuelve_a_servir(self, juego, florinda_en_popis, efectos):
+        self._sonar_en(juego, "casa_godinez")
+        _correr(juego, AUDIO_QUICO_ESPERA_SEGUNDOS)
+        self._sonar_en(juego, "casa_florinda")
+        assert florinda_en_popis.habitacion_actual == "casa_florinda"
+
+    def test_al_moverse_distorsiona_el_monitor(self, juego, florinda_en_popis, efectos):
+        self._sonar_en(juego, "casa_godinez")
+        juego.sistema_camaras.camara_actual = "casa_paty"
+        juego._actualizar(FOTOGRAMA)
+        assert juego.sistema_camaras.distorsionada
+
+    def test_moverse_por_su_cuenta_tambien_distorsiona(self, juego, florinda_en_popis):
+        juego.sistema_camaras.camara_actual = "casa_paty"
+        florinda_en_popis.habitacion_actual = "segundo_patio"
+        juego._actualizar(FOTOGRAMA)
+        assert juego.sistema_camaras.distorsionada
+
+    def test_si_no_se_mueve_no_hay_distorsion(self, juego, florinda_en_popis):
+        juego._actualizar(FOTOGRAMA)
+        assert not juego.sistema_camaras.distorsionada
+
+
+class TestAparicionesEnLaPartida:
+    def test_al_aparecer_suena_y_no_cambia_nada_del_juego(self, juego, efectos):
+        empezar_noche(juego, 1)
+        juego.apariciones = AparicionesRaras(
+            1, juego.imagenes_raras.cantidad,
+            azar=SimpleNamespace(randrange=lambda tope: 0),
+        )
+        estado = juego.gestor_estados.estado
+        carga = juego.linterna.carga
+        _correr(juego, 1.0)
+        assert juego.apariciones.visible
+        assert EFECTO_EASTER_EGG in efectos
+        assert juego.gestor_estados.estado is estado
+        assert juego.linterna.carga == carga
+        juego._dibujar()  # se dibuja sin fallar encima de la partida
+
+    def test_cada_noche_usa_su_probabilidad(self, juego):
+        empezar_noche(juego, 5)
+        assert juego.apariciones.uno_entre == 5000
+        empezar_noche(juego, 1)
+        assert juego.apariciones.uno_entre == 10000

@@ -28,26 +28,19 @@ from ..config.interfaz import (
     FUENTE_TAMANO_HUD,
     FUENTE_TAMANO_TEXTO,
     FUENTE_TAMANO_TITULO,
-    ICONO_OBJETO_HUD,
     POSICION_HUD_CAMARAS,
     POSICION_HUD_PATIO,
 )
 from ..config.rutas import DIR_ASSETS_UI
 from ..config.ventana import ALTO_PANTALLA, ANCHO_PANTALLA, RESOLUCION_BASE
-from ..dominio.inventario import ORDEN_ARROJABLES
 from ..infraestructura.fuentes import crear_fuente
 from ..infraestructura.recursos import CacheImagenes
-from .iconos import IconosObjetos
 
 # Fondo de la pantalla de derrota. Si el archivo no existe todavía se cae al
 # relleno negro de siempre, como el resto del arte opcional del proyecto.
 ARCHIVO_GAME_OVER_FONDO = "game over.png"
 
 COLOR_FRANJA_GAME_OVER = (0, 0, 0, 150)
-
-# Fila de objetos del inventario, encima de la franja de ayuda.
-SEPARACION_INVENTARIO = 10
-Y_INVENTARIO = ALTO_PANTALLA - 130
 
 # Pestañas de abajo que levantan el monitor y el tablero de servicios. Basta
 # con pasarles el ratón por encima, al estilo del género.
@@ -82,7 +75,6 @@ RECT_FRANJA_TIRAS = RECT_TIRA_SERVICIOS.union(RECT_TIRA_CAMARAS).union(RECT_TIRA
 # imagen de la cámara.
 Y_AYUDA_EN_PANEL = 580
 
-COLOR_FONDO_RANURA = (0, 0, 0, 140)
 COLOR_TIRA = (0, 0, 0, 150)
 COLOR_TIRA_RESALTADA = (235, 225, 180, 225)
 
@@ -95,18 +87,15 @@ class EstadoHud:
     en_camaras: bool = False
     en_servicios: bool = False
     objeto_a_recoger: str = ""
-    peticion: str = ""  # nombre visible de lo que pide Doña Clotilde
-    id_peticion: str = ""  # su id, para el icono
     tira_resaltada: str = ""  # "camaras", "servicios" o vacío
-    aviso: str = ""  # mensaje corto tras usar un servicio o arrojar algo
+    aviso: str = ""  # mensaje corto tras usar un servicio
 
 
 class InterfazJuego:
     """Agrupa el dibujado de las pantallas de partida."""
 
-    def __init__(self, idiomas, iconos: IconosObjetos):
+    def __init__(self, idiomas):
         self.idiomas = idiomas
-        self.iconos = iconos
         self.fuente_titulo = crear_fuente(FUENTE_TAMANO_TITULO, negrita=True)
         self.fuente_texto = crear_fuente(FUENTE_TAMANO_TEXTO)
         self.fuente_hud = crear_fuente(FUENTE_TAMANO_HUD)
@@ -114,7 +103,7 @@ class InterfazJuego:
         self._fondos_fin = CacheImagenes(tamano=RESOLUCION_BASE)
 
     def dibujar_hud(self, superficie: pygame.Surface, temporizador, jugador, linterna,
-                    inventario, estado: "EstadoHud"):
+                    estado: "EstadoHud"):
         # Con el monitor delante el HUD se mete dentro del marco, a la
         # izquierda: en las esquinas está el arte del marco y abajo a la
         # derecha, el mapa.
@@ -138,50 +127,11 @@ class InterfazJuego:
             superficie.blit(texto_posicion, (x, 20))
 
         self._dibujar_bateria(superficie, linterna, en_panel)
-        if not jugador.esta_escondido:
-            self._dibujar_inventario(superficie, inventario)
-        self._dibujar_peticion(superficie, estado)
         if en_panel:
             self._dibujar_tira_bajar(superficie, estado)
         elif jugador.esta_escondido:
             self._dibujar_tiras(superficie, estado)
         self._dibujar_ayuda(superficie, jugador, estado)
-
-    def _dibujar_inventario(self, superficie: pygame.Surface, inventario):
-        """Fila de objetos que el jugador puede arrojar. El número de cada
-        uno es fijo aunque falten los de en medio, para que la tecla siga
-        siendo la misma toda la noche."""
-        llevados = inventario.arrojables()
-        if not llevados:
-            return
-
-        paso = ICONO_OBJETO_HUD + SEPARACION_INVENTARIO
-        inicio = (ANCHO_PANTALLA - (len(llevados) * paso - SEPARACION_INVENTARIO)) // 2
-        for indice, id_objeto in enumerate(llevados):
-            x = inicio + indice * paso
-            recuadro = pygame.Rect(x, Y_INVENTARIO, ICONO_OBJETO_HUD, ICONO_OBJETO_HUD)
-            self._pintar(superficie, recuadro, COLOR_FONDO_RANURA)
-            pygame.draw.rect(superficie, COLOR_GRIS, recuadro, width=1)
-
-            icono = self.iconos.obtener(id_objeto, ICONO_OBJETO_HUD)
-            if icono is not None:
-                superficie.blit(icono, recuadro)
-
-            numero = ORDEN_ARROJABLES.index(id_objeto) + 1
-            texto = self.fuente_camara.render(str(numero), True, COLOR_AMARILLO_AVISO)
-            superficie.blit(texto, (recuadro.x + 3, recuadro.y + 1))
-
-    def _dibujar_peticion(self, superficie: pygame.Surface, estado: "EstadoHud"):
-        """Lo que Doña Clotilde reclama mientras está delante."""
-        if not estado.id_peticion:
-            return
-        aviso = self.idiomas.t("clotilde_pide", objeto=estado.peticion)
-        texto = self.fuente_texto.render(aviso, True, COLOR_AMARILLO_AVISO)
-        rect = texto.get_rect(center=(ANCHO_PANTALLA // 2, 110))
-        superficie.blit(texto, rect)
-        icono = self.iconos.obtener(estado.id_peticion, ICONO_OBJETO_HUD)
-        if icono is not None:
-            superficie.blit(icono, icono.get_rect(midleft=(rect.right + 10, rect.centery)))
 
     def _dibujar_tiras(self, superficie: pygame.Surface, estado: "EstadoHud"):
         """Las dos pestañas de abajo. Basta con pasarles el ratón por encima
@@ -285,7 +235,9 @@ class InterfazJuego:
         # Franja oscura detrás del bloque de texto: la imagen de fondo tiene
         # zonas claras (la luna, la ventana iluminada) que sin esto podrían
         # dejar el texto poco legible según dónde caigan.
-        self._pintar(superficie, pygame.Rect(0, 210, ANCHO_PANTALLA, 240), COLOR_FRANJA_GAME_OVER)
+        # Llega hasta abajo de la ayuda: entre medias van las opciones de
+        # reintentar o volver al menú (ver menu_derrota.py).
+        self._pintar(superficie, pygame.Rect(0, 210, ANCHO_PANTALLA, 310), COLOR_FRANJA_GAME_OVER)
 
         texto = self.fuente_titulo.render(
             self.idiomas.t("game_over_titulo"), True, COLOR_ROJO_ALERTA
@@ -295,7 +247,7 @@ class InterfazJuego:
         if nombre_animatronic:
             motivo = self.idiomas.t(clave_motivo, nombre=nombre_animatronic)
             subtexto = self.fuente_texto.render(motivo, True, COLOR_BLANCO)
-            superficie.blit(subtexto, subtexto.get_rect(center=(ANCHO_PANTALLA // 2, 330)))
+            superficie.blit(subtexto, subtexto.get_rect(center=(ANCHO_PANTALLA // 2, 320)))
 
         ayuda = self.fuente_texto.render(self.idiomas.t("ayuda_fin"), True, COLOR_BLANCO)
-        superficie.blit(ayuda, ayuda.get_rect(center=(ANCHO_PANTALLA // 2, 410)))
+        superficie.blit(ayuda, ayuda.get_rect(center=(ANCHO_PANTALLA // 2, 495)))

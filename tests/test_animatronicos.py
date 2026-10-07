@@ -148,35 +148,63 @@ class TestPasosCondicionados:
         assert bruja.destinos_posibles([bruja, ramon]) == ()
 
 
-class TestRetroceso:
-    """El audio le quita terreno a Doña Florinda sin mandarla a su casa."""
+class TestElAudioLaAtrae:
+    """El audio de Quico lleva a Doña Florinda a la cámara donde suena, si
+    es vecina de la suya. Si suena lejos, no lo oye."""
 
-    def test_retrocede_un_solo_paso(self):
+    @staticmethod
+    def _florinda_en(camara):
         florinda = crear(nombres.FLORINDA, nivel_ia=10)
-        florinda.habitacion_actual = "casa_popis"
-        assert florinda.retroceder()
+        florinda.habitacion_actual = camara
+        return florinda
+
+    def test_sus_vecinas_salen_de_su_recorrido_de_ida_y_vuelta(self):
+        florinda = self._florinda_en("casa_popis")
+        assert set(florinda.camaras_vecinas()) == {"casa_godinez", "segundo_patio"}
+
+    def test_desde_el_segundo_patio_linda_con_las_dos_casas_de_arriba(self):
+        florinda = self._florinda_en("segundo_patio")
+        assert set(florinda.camaras_vecinas()) == {
+            "casa_popis", "casa_godinez", "entrada",
+        }
+
+    def test_ponerle_el_audio_detras_la_hace_retroceder(self):
+        florinda = self._florinda_en("casa_popis")
+        assert florinda.atraer_a("casa_godinez")
         assert florinda.habitacion_actual == "casa_godinez"
 
-    def test_desde_la_reja_ya_no_retrocede(self):
+    def test_ponerselo_delante_la_acerca(self):
+        """Es el error que hay que evitar: el audio no siempre la aleja."""
+        florinda = self._florinda_en("casa_popis")
+        assert florinda.atraer_a("segundo_patio")
+        assert florinda.habitacion_actual == "segundo_patio"
+
+    def test_un_audio_lejos_no_lo_oye(self):
+        florinda = self._florinda_en("segundo_patio")
+        assert not florinda.atraer_a("casa_florinda")
+        assert not florinda.atraer_a("casa_paty")
+        assert florinda.habitacion_actual == "segundo_patio"
+
+    def test_en_su_misma_camara_no_la_mueve(self):
+        florinda = self._florinda_en("casa_popis")
+        assert not florinda.atraer_a("casa_popis")
+
+    def test_desde_la_reja_ya_no_hace_caso(self):
         """Al llegar a la entrada el audio deja de servir: es el punto en el
         que el jugador ya no puede hacer nada más contra ella."""
-        florinda = crear(nombres.FLORINDA, nivel_ia=10)
-        florinda.habitacion_actual = "entrada"
-        assert not florinda.retroceder()
+        florinda = self._florinda_en("entrada")
+        assert not florinda.atraer_a("segundo_patio")
         assert florinda.habitacion_actual == "entrada"
 
-    def test_quien_no_tiene_retrocesos_no_se_mueve(self, quico):
-        quico.habitacion_actual = "casa_paty"
-        assert not quico.retroceder()
-        assert quico.habitacion_actual == "casa_paty"
+    def test_nunca_se_la_lleva_al_patio_con_un_audio(self):
+        florinda = self._florinda_en("entrada")
+        assert HABITACION_JUGADOR not in florinda.camaras_vecinas()
+        assert not florinda.atraer_a(HABITACION_JUGADOR)
 
-    def test_retroceder_no_lo_devuelve_a_su_casa(self):
-        """Si el audio la reiniciara, una sola pulsación bastaría para toda la
-        noche y no habría por qué racionarlo."""
-        florinda = crear(nombres.FLORINDA, nivel_ia=10)
-        florinda.habitacion_actual = "segundo_patio"
-        florinda.retroceder()
-        assert florinda.habitacion_actual != florinda.configuracion.habitacion_inicial
+    def test_inactiva_no_se_mueve(self):
+        florinda = self._florinda_en("casa_popis")
+        florinda.activo = False
+        assert not florinda.atraer_a("casa_godinez")
 
 
 class TestAtaque:
@@ -196,7 +224,6 @@ class TestAtaque:
         quico.ahuyentar()
         assert not quico.esta_acechando()
         assert quico.segundos_para_atacar == 0.0
-        assert quico.objeto_pedido is None
 
     @pytest.mark.parametrize("config", ELENCO, ids=lambda c: c.nombre)
     def test_ahuyentar_lo_deja_por_donde_su_recorrido_dice(self, config):
@@ -217,16 +244,6 @@ class TestAtaque:
         assert crear(nombres.DON_RAMON, nivel_ia=1).espera_de_ataque() == pytest.approx(
             14.0
         )
-
-    def test_retrasar_le_suma_margen_al_jugador(self, quico):
-        llevar_a_acechar(quico)
-        antes = quico.segundos_para_atacar
-        quico.retrasar(5.0)
-        assert quico.segundos_para_atacar == pytest.approx(antes + 5.0)
-
-    def test_retrasar_no_hace_nada_si_todavia_no_llego(self, quico):
-        quico.retrasar(5.0)
-        assert quico.segundos_para_atacar == 0.0
 
     def test_a_mas_nivel_menos_margen_para_reaccionar(self):
         lento = crear(nombres.QUICO, nivel_ia=1)
@@ -319,35 +336,6 @@ class TestReaccionALaLuz:
     def test_desde_un_sitio_sin_punto_no_hay_torso_al_que_apuntar(self, quico):
         assert quico.punto_acecho_en("dentro_barril") is None
         assert quico.punto_torso_en("dentro_barril") is None
-
-
-class TestObjetosQueAcepta:
-    def test_a_jaimico_hay_que_alumbrarlo_para_darle_su_cafe(self):
-        jaimico = crear(nombres.JAIMICO, nivel_ia=10)
-        assert jaimico.acepta_objeto(iluminado=True)
-        assert not jaimico.acepta_objeto(iluminado=False)
-
-    def test_quico_recoge_su_pelota_a_oscuras(self, quico):
-        """Alumbrarlo es mortal, así que su contramedida tiene que poder
-        hacerse sin luz o sería imposible de completar."""
-        assert quico.acepta_objeto(iluminado=False)
-
-    def test_solo_jaimico_pide_luz_para_recibir(self):
-        """Cualquier otro con esta regla tendría el mismo problema que tenía
-        Quico: una contramedida que se contradice consigo misma."""
-        piden_luz = [c.nombre for c in ELENCO if c.necesita_luz_para_recibir]
-        assert piden_luz == [nombres.JAIMICO]
-
-    def test_el_chavo_recoge_lo_que_le_tiren_de_todos_modos(self, chavo):
-        assert chavo.acepta_objeto(iluminado=False)
-
-    def test_clotilde_pide_un_objeto_al_llegar(self, clotilde):
-        llevar_a_acechar(clotilde)
-        assert clotilde.objeto_pedido is not None
-
-    def test_los_demas_no_piden_nada(self, quico):
-        llevar_a_acechar(quico)
-        assert quico.objeto_pedido is None
 
 
 class TestPoses:
@@ -461,7 +449,10 @@ class TestProgresionDeNoches:
 # la noche entera muchas veces y se cuentan las llegadas.
 
 SEMILLA_SIMULACION = 20260815
-NOCHES_SIMULADAS = 60
+# Con 60 noches la media de quien va justo (Doña Clotilde en la noche 3,
+# ~0,6 llegadas) bailaba por debajo del mínimo según cómo cayera la
+# semilla. Con 300 la medición ya no depende de la suerte.
+NOCHES_SIMULADAS = 300
 
 # Veces que un personaje activo tiene que poder plantarse delante del jugador
 # a lo largo de su noche para que valga la pena que salga. Media llegada es

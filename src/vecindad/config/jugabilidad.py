@@ -1,5 +1,5 @@
-"""Números que definen las mecánicas: linterna, objetos del suelo, servicios
-del barril y sabotaje de las cámaras.
+"""Números que definen las mecánicas: linterna, baterías del suelo, espantar
+con la luz, servicios del barril y sabotaje de las cámaras.
 
 Es el archivo que se toca para equilibrar el juego. No contiene nada de
 render: lo visual vive en config/interfaz.py.
@@ -40,33 +40,41 @@ NOCHE_SIN_BATERIAS_FIJAS = 4
 # el tope puesto (BATERIAS_INICIALES_EN_BARRIL).
 LINTERNA_BATERIAS_MAXIMAS = 2
 
-# Cada objeto tiene su sitio fijo en los Lavaderos (ver dominio/objetos.py) y
-# la noche arranca con todos puestos. Al recogerlo, su sitio queda vacío
-# durante este tiempo exacto, el mismo para todos los objetos. No hay sorteo:
-# lo que se juega es saber cuándo vuelve cada cosa y no malgastarla.
-# Las noches que no aparezcan (la personalizada) usan
-# OBJETO_REAPARICION_SEGUNDOS.
-OBJETO_REAPARICION_POR_NOCHE = {1: 20.0, 2: 22.0, 3: 25.0, 4: 30.0, 5: 35.0, 6: 40.0}
-OBJETO_REAPARICION_SEGUNDOS = 30.0
+# Lo único que se encuentra tirado son baterías, siempre en el mismo sitio de
+# los Lavaderos y con tiempos fijos, sin sorteo (ver dominio/objetos.py). El
+# suelo queda vacío BATERIA_ESPERA_* segundos, aparece una y, si nadie la
+# recoge en BATERIA_PERMANENCIA_* segundos, se va y vuelve a correr la espera.
+# Como la linterna es también el arma, cada batería cuenta: conforme avanzan
+# las noches salen más espaciadas y duran menos tiradas. Las noches que no
+# aparezcan (la personalizada) usan los valores por defecto.
+BATERIA_ESPERA_POR_NOCHE = {1: 20.0, 2: 25.0, 3: 30.0, 4: 35.0, 5: 40.0, 6: 45.0}
+BATERIA_ESPERA_SEGUNDOS = 35.0
+BATERIA_PERMANENCIA_POR_NOCHE = {1: 12.0, 2: 11.0, 3: 10.0, 4: 9.0, 5: 8.0, 6: 7.0}
+BATERIA_PERMANENCIA_SEGUNDOS = 9.0
 
-# --- Puntería al arrojar ---
-# El objeto vuela hacia donde apunta el ratón y le da a quien tenga el cuerpo
-# debajo: una elipse alrededor del torso, de la cabeza a las rodillas. Se
-# encoge con el nivel_ia hasta ARROJO_ACIERTO_ESCALA_MINIMA: a nivel bajo
-# vale cualquier parte del cuerpo; al máximo hay que apuntar al centro.
-# Antes era un círculo de pecho y apuntar a la cara fallaba, que es justo
-# donde el jugador apunta sin pensarlo.
-ARROJO_ACIERTO_SEMIANCHO = 120
-ARROJO_ACIERTO_SEMIALTO = ALTURA_TORSO - 30
-ARROJO_ACIERTO_ESCALA_MINIMA = 0.6
-# Lo que tarda el objeto en llegar desde la mano hasta donde se apuntó. El
-# efecto se resuelve al caer, no al soltarlo, y mientras vuela no se puede
-# arrojar otro.
-ARROJO_DURACION_VUELO_SEGUNDOS = 0.3
-
-# El churrumino arrojado solo entretiene a El Chavo este rato, en vez de
-# ahuyentarlo como hacen los demás objetos.
-SEGUNDOS_RETRASO_CHURRUMINO = 5.0
+# --- Espantar con la luz (ver dominio/espanto.py) ---
+# A quien se espanta con la luz se le ve un punto débil que se mueve a
+# tirones por su cuerpo. Hay que sostener el centro del haz (el cursor)
+# encima hasta llenar la barra; si se pierde, la barra baja. Todo escala con
+# el nivel_ia, del primer valor (nivel 1) al segundo (nivel 20).
+#
+# Por dónde se mueve el punto: una elipse centrada en el torso, de la cabeza
+# a las rodillas.
+PUNTO_DEBIL_SEMIANCHO = 80
+PUNTO_DEBIL_SEMIALTO = ALTURA_TORSO - 90
+# Distancia del cursor al punto dentro de la cual cuenta como sostenido.
+PUNTO_DEBIL_RADIO = (50, 28)
+# Segundos sostenidos sin perderlo que hacen falta para espantarlo.
+PUNTO_DEBIL_SEGUNDOS = (1.5, 3.0)
+# Píxeles por segundo a los que corre el punto hacia su siguiente destino.
+PUNTO_DEBIL_VELOCIDAD = (120.0, 320.0)
+# Cada cuánto cambia de destino (mínimo, máximo), en segundos.
+PUNTO_DEBIL_CAMBIO_SEGUNDOS = ((0.8, 1.6), (0.3, 0.8))
+# Qué parte de la barra se pierde por cada segundo fuera del punto.
+PUNTO_DEBIL_DRENADO = 0.4
+# La Chilindrina castiga fallar: alumbrarle el cuerpo fuera del punto más de
+# este rato seguido le descarga la batería entera al jugador.
+CHILINDRINA_GRACIA_SEGUNDOS = 0.6
 
 # --- Servicios de utilidad del barril ---
 SERVICIO_AUDIO_SEGUNDOS = 5.0
@@ -80,6 +88,10 @@ NOCHE_AUDIO_LIMITADO = 2  # desde esta noche el audio deja de ser ilimitado
 # panel del barril. Las noches que no aparezcan usan USOS_AUDIO_QUICO.
 USOS_AUDIO_POR_NOCHE = {2: 5, 3: 4, 4: 3, 5: 3}
 USOS_AUDIO_QUICO = 3
+# Segundos tras sonar el audio de Quico antes de poder sonarlo otra vez,
+# en esa cámara o en cualquier otra: no se puede arrear a Doña Florinda a
+# fuerza de clics.
+AUDIO_QUICO_ESPERA_SEGUNDOS = 3.0
 
 # Cuánto tarda en llegar el Sr. Barriga cuando se le llama sin necesidad (Don
 # Ramón no acechando): un rango al azar, no un golpe inmediato, para que la
@@ -89,10 +101,30 @@ BARRIGA_LLEGADA_MINIMA_SEGUNDOS = 5.0
 BARRIGA_LLEGADA_MAXIMA_SEGUNDOS = 15.0
 
 # --- Sabotaje de las cámaras ---
-# Segundos seguidos que aguanta El Chavo siendo observado antes de arruinar
-# las cámaras. El contador baja solo si se deja de mirarlo.
-CAMARA_SABOTAJE_SEGUNDOS = 8.0
-CAMARA_SABOTAJE_RECUPERACION = 0.5  # cuánto se enfría por segundo sin mirarlo
+# Segundos que aguanta El Chavo siendo observado antes de arruinar las
+# cámaras: 2 s en las noches 3 y 4 y 1 s en el resto (y en la personalizada,
+# CAMARA_SABOTAJE_SEGUNDOS). Con 8 s bastaba con cambiar de cámara al verlo.
+CAMARA_SABOTAJE_POR_NOCHE = {3: 2.0, 4: 2.0}
+CAMARA_SABOTAJE_SEGUNDOS = 1.0
+# Cuánto se enfría la presión por cada segundo sin mirarlo. Es lento a
+# propósito: los vistazos cortos se van sumando, así que volver a su cámara
+# una y otra vez también las rompe.
+CAMARA_SABOTAJE_RECUPERACION = 0.2
+# A partir de esta proporción de la presión el monitor empieza a fallar, para
+# que el jugador sepa que tiene que quitar la vista ya.
+CAMARA_SABOTAJE_AVISO = 0.5
+
+# --- Apariciones raras (easter eggs) ---
+# Cada segundo de partida se tira 1 entre N a que se cuele una de las
+# imágenes de assets/eggs/. N baja conforme avanza la campaña (más
+# probable): 1 entre 10000 la noche 1 y 1 entre 5000 la 5 y la 6. Las noches
+# que no aparezcan (la personalizada) usan APARICION_RARA_UNO_ENTRE.
+APARICION_RARA_UNO_ENTRE_POR_NOCHE = {
+    1: 10000, 2: 8750, 3: 7500, 4: 6250, 5: 5000, 6: 5000,
+}
+APARICION_RARA_UNO_ENTRE = 5000
+# Cuánto dura a la vista, contando la entrada y la salida.
+APARICION_RARA_SEGUNDOS = 3.0
 
 # --- Interferencia por movimiento ---
 # Cuánto se queda sin señal una cámara cuando alguien se mueve justo mientras

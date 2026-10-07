@@ -1,8 +1,9 @@
 """El botón de audio del monitor de cámaras.
 
 Es lo único con lo que se puede actuar sobre la vecindad sin salir del barril:
-suena una grabación de Quico y Doña Florinda retrocede una cámara en su
-recorrido. Va abajo a la izquierda del monitor, entre la fecha y el mapa.
+suena una grabación de Quico en la cámara que se está mirando, y Doña
+Florinda va hacia allá si es vecina de la suya. Va abajo a la izquierda del
+monitor, entre la fecha y el mapa.
 
 Las reproducciones están contadas por noche (la primera es ilimitada), pero
 el botón no dice cuántas quedan: llevar la cuenta es parte de lo que el
@@ -66,8 +67,9 @@ class BotonAudio:
 
     @staticmethod
     def _disponible(estado) -> bool:
-        """Se apaga con otro servicio en marcha o sin reproducciones."""
-        if estado.en_marcha is not None:
+        """Se apaga con otro servicio en marcha, durante la espera entre usos
+        o sin reproducciones."""
+        if estado.en_marcha is not None or estado.espera_audio > 0.0:
             return False
         return estado.audio_ilimitado or estado.usos_audio > 0
 

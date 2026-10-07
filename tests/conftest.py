@@ -75,17 +75,17 @@ def don_ramon() -> Animatronic:
 
 @pytest.fixture
 def quico() -> Animatronic:
-    """Solo acepta objetos si está alumbrado."""
+    """Se espanta con la luz y la luz no le hace daño."""
     return crear(nombres.QUICO, nivel_ia=10)
 
 
 @pytest.fixture
 def chavo() -> Animatronic:
-    """El que se entretiene con el churrumino y sabotea las cámaras."""
+    """El que sabotea las cámaras."""
     return crear(nombres.CHAVO, nivel_ia=10)
 
 
 @pytest.fixture
 def clotilde() -> Animatronic:
-    """Al llegar pide un objeto al azar."""
+    """Espera a Don Ramón en el Segundo Patio para bajar."""
     return crear(nombres.CLOTILDE, nivel_ia=10)

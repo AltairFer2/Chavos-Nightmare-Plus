@@ -17,15 +17,15 @@ from typing import Optional, Sequence, Tuple
 
 from ...config.jugabilidad import (
     ALTURA_TORSO,
-    ARROJO_ACIERTO_ESCALA_MINIMA,
-    ARROJO_ACIERTO_SEMIALTO,
-    ARROJO_ACIERTO_SEMIANCHO,
     LUZ_RADIO_PELIGRO_MAXIMO,
     LUZ_RADIO_PELIGRO_MINIMO,
+    PUNTO_DEBIL_CAMBIO_SEGUNDOS,
+    PUNTO_DEBIL_RADIO,
+    PUNTO_DEBIL_SEGUNDOS,
+    PUNTO_DEBIL_VELOCIDAD,
 )
 from ...config.partida import NIVEL_IA_MAXIMO, NIVEL_IA_MINIMO
 from ...mundo.habitaciones import HABITACION_JUGADOR
-from ..objetos import OBJETOS_DEFENSIVOS
 from .definicion import POSES_POR_PERSONAJE, ConfiguracionAnimatronic
 
 
@@ -47,8 +47,6 @@ class Animatronic:
         self.pose = 1
         # Se pone en True al alumbrarlo: deja de respetar el barril.
         self.activado = False
-        # Solo lo usa Doña Clotilde: el objeto que reclama en esta visita.
-        self.objeto_pedido: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Movimiento (una llamada por ronda del temporizador)
@@ -101,8 +99,6 @@ class Animatronic:
             return
         self.pose = random.randint(1, POSES_POR_PERSONAJE)
         self.segundos_para_atacar = self.espera_de_ataque()
-        if self.configuracion.pide_objeto:
-            self.objeto_pedido = random.choice(OBJETOS_DEFENSIVOS)
 
     def irrumpir(self):
         """Lo planta encima del jugador sin pasar por su recorrido.
@@ -149,40 +145,46 @@ class Animatronic:
         return self.segundos_para_atacar <= 0.0
 
     def ahuyentar(self):
-        """Lo saca de encima del jugador. Es lo que hacen los objetos que le
-        corresponden y los servicios del barril: no se elimina del elenco, se
-        va por donde su recorrido diga y vuelve a acercarse desde ahí."""
+        """Lo saca de encima del jugador. Es lo que hacen espantarlo con la
+        luz y los servicios del barril: no se elimina del elenco, se va por
+        donde su recorrido diga y vuelve a acercarse desde ahí."""
         salidas = self.configuracion.transiciones.get(HABITACION_JUGADOR, ())
         self.habitacion_actual = (
             random.choice(salidas) if salidas else self.configuracion.habitacion_inicial
         )
         self.segundos_para_atacar = 0.0
-        self.objeto_pedido = None
         self.activado = False
 
-    def retroceder(self) -> bool:
-        """Le quita una cámara de terreno sin mandarlo a su casa. Es lo que
-        hace el audio con Doña Florinda. Devuelve False si desde donde está
-        ya no se le puede empujar: al llegar a la reja el audio deja de
-        servir y hay que aguantarla ahí."""
-        destinos = self.configuracion.retrocesos.get(self.habitacion_actual, ())
-        if not destinos:
+    def camaras_vecinas(self) -> Tuple[str, ...]:
+        """Las cámaras que lindan con la suya por su propio recorrido, de
+        ida o de vuelta, más los retrocesos. El Primer Patio no cuenta: ahí
+        no se le puede llevar con un audio."""
+        actual = self.habitacion_actual
+        vecinas = []
+        for aristas in (self.configuracion.transiciones, self.configuracion.retrocesos):
+            for origen, destinos in aristas.items():
+                if origen == actual:
+                    vecinas.extend(destinos)
+                elif actual in destinos:
+                    vecinas.append(origen)
+        return tuple(
+            dict.fromkeys(c for c in vecinas if c not in (actual, HABITACION_JUGADOR))
+        )
+
+    def atraer_a(self, id_habitacion: str) -> bool:
+        """El audio de Quico sonando en esa cámara. Si es vecina de la suya,
+        va hacia allá; si queda lejos, no lo oye. Puede hacerla retroceder o,
+        si se pone el audio del lado equivocado, acercarla. Devuelve si se
+        movió. Desde la reja (sorda_en) ya no hace caso."""
+        if not self.activo or self.esta_acechando():
             return False
-        self.habitacion_actual = random.choice(destinos)
+        if self.habitacion_actual in self.configuracion.sorda_en:
+            return False
+        if id_habitacion not in self.camaras_vecinas():
+            return False
+        self.habitacion_actual = id_habitacion
         self.segundos_para_atacar = 0.0
-        self.objeto_pedido = None
         return True
-
-    def retrasar(self, segundos: float):
-        """Le da al jugador un respiro sin quitarlo de encima."""
-        if self.esta_acechando():
-            self.segundos_para_atacar += segundos
-
-    def acepta_objeto(self, iluminado: bool) -> bool:
-        """Si hace caso de lo que se le arroja. Quico solo investiga lo que
-        cae si está alumbrado, y a Jaimico hay que alumbrarlo para poder
-        acercarle su café."""
-        return iluminado or not self.configuracion.necesita_luz_para_recibir
 
     def espera_de_ataque(self) -> float:
         """Segundos que espera antes de atacar, interpolados por nivel_ia:
@@ -210,15 +212,31 @@ class Animatronic:
         rango = LUZ_RADIO_PELIGRO_MAXIMO - LUZ_RADIO_PELIGRO_MINIMO
         return int(LUZ_RADIO_PELIGRO_MINIMO + rango * self._factor_ia())
 
-    def semiejes_acierto(self) -> Tuple[int, int]:
-        """Medio ancho y medio alto de la elipse, centrada en el torso, dentro
-        de la cual un objeto arrojado le da. Se encoge con el nivel_ia:
-        cuanto más alto, más fina la puntería."""
-        escala = 1.0 - (1.0 - ARROJO_ACIERTO_ESCALA_MINIMA) * self._factor_ia()
+    # ------------------------------------------------------------------
+    # Punto débil (ver dominio/espanto.py): cuanto más nivel, más chico,
+    # más rápido, más nervioso y más rato hay que sostenerlo.
+    # ------------------------------------------------------------------
+    def radio_punto_debil(self) -> float:
+        return self._segun_ia(PUNTO_DEBIL_RADIO)
+
+    def segundos_para_espantar(self) -> float:
+        return self._segun_ia(PUNTO_DEBIL_SEGUNDOS)
+
+    def velocidad_punto_debil(self) -> float:
+        return self._segun_ia(PUNTO_DEBIL_VELOCIDAD)
+
+    def cambio_punto_debil(self) -> Tuple[float, float]:
+        """Cada cuánto (mínimo, máximo) su punto débil cambia de destino."""
+        lento, rapido = PUNTO_DEBIL_CAMBIO_SEGUNDOS
         return (
-            int(ARROJO_ACIERTO_SEMIANCHO * escala),
-            int(ARROJO_ACIERTO_SEMIALTO * escala),
+            self._segun_ia((lento[0], rapido[0])),
+            self._segun_ia((lento[1], rapido[1])),
         )
+
+    def _segun_ia(self, extremos: Tuple[float, float]) -> float:
+        """Interpola entre el valor de nivel 1 y el de nivel 20."""
+        bajo, alto = extremos
+        return bajo + (alto - bajo) * self._factor_ia()
 
     def _factor_ia(self) -> float:
         """Posición del nivel_ia dentro de su rango útil (1-20), de 0.0 a 1.0."""

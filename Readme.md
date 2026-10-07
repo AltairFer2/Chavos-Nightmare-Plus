@@ -16,15 +16,15 @@ cuenta atrás: hay unos segundos para reaccionar antes de que ataque.
 
 | Mecánica | En qué consiste |
 |---|---|
-| **Linterna** | Único recurso limitado de la noche. Ilumina un círculo alrededor del cursor; fuera de él no se ve nada. Las baterías de repuesto se buscan a oscuras. |
-| **Luz mortal** | A Don Ramón, Doña Florinda y La Chilindrina **no se les puede alumbrar de cerca**. Cuanto más alto su nivel, más lejos es fatal el haz. |
-| **Objetos** | Seis objetos defensivos, además del café y la batería. Cada uno tiene su sitio fijo en los Lavaderos: la noche empieza con todos puestos y, al recogerlo, vuelve a su sitio tras un tiempo fijo (más largo cuanto más avanzada la campaña). No se lleva más de uno de cada a la vez. |
-| **Puntería** | El objeto se arroja hacia el cursor y solo sirve si le da al vecino que corresponde. Cuanto más alto su nivel, más fino hay que apuntar. Fallar o darle a quien no era lo gasta igual. |
-| **Café con churrumino** | Lo único que calma a Jaimico. Se prepara combinando café y churrumino, pero el churrumino suelto también entretiene a El Chavo: la decisión es del jugador. |
-| **Cámaras** | Solo se abren desde dentro del barril, y el monitor tarda un momento en bajar. Mirar a El Chavo demasiado rato seguido hace que arruine todas las cámaras. |
-| **Interferencia** | Si alguien se mueve justo mientras se le está mirando, esa cámara se cae unos segundos: se oye que se fue, pero no se ve hacia dónde. |
-| **Servicios del barril** | Llamar al Sr. Barriga (lo único que quita a Don Ramón, pero llamarlo sin necesidad es mortal), el audio de Quico, restablecer cámaras y restablecer todo. |
-| **Doña Clotilde** | Al llegar reclama uno de los seis objetos al azar. Si no se tiene, hay que salir a buscarlo. |
+| **Linterna** | Único recurso limitado de la noche, y también el arma. Ilumina un círculo alrededor del cursor; fuera de él no se ve nada. |
+| **Luz mortal** | A Don Ramón y Doña Florinda **no se les puede alumbrar de cerca**: se van con el Sr. Barriga y con el audio de Quico. Cuanto más alto su nivel, más lejos es fatal el haz. |
+| **Espantar con la luz** | A Quico, La Chilindrina, El Chavo, Jaimico y Doña Clotilde se les ve un **punto débil** que se mueve a tirones por el cuerpo. Hay que sostener el centro del haz encima hasta llenar su barra; perderlo la va vaciando. Cuanto más alto su nivel, más chico, rápido y nervioso es el punto, y más rato hay que sostenerlo. A La Chilindrina, alumbrarle el cuerpo fuera del punto más de un momento le descarga la batería al jugador. |
+| **Baterías** | Lo único que se encuentra tirado: una a la vez, siempre en el mismo sitio de los Lavaderos y con tiempos fijos por noche (sin sorteo). Si nadie la recoge, parpadea y se va. Caben dos de repuesto en el bolsillo. |
+| **Cámaras** | Solo se abren desde dentro del barril, y el monitor tarda un momento en bajar. Mirar a El Chavo 2 s (noches 3-4) o 1 s (el resto) hace que arruine todas las cámaras; los vistazos cortos se van sumando y el monitor falla cuando está a punto. Mientras está en pantalla la imagen tiembla y el mapa se mueve a saltos, botones incluidos, así que salir de su cámara cuesta. Al romperlas, **El Chavo aparece de golpe en el patio** y hay que enfrentarlo. |
+| **Interferencia** | Si alguien entra o sale de la cámara que se está mirando, esa cámara se cae unos segundos: se oye que alguien se movió, pero no se ve quién ni hacia dónde. Cuando Doña Florinda se mueve, la cámara que se esté mirando da un tirón, sea cual sea. |
+| **Audio de Quico** | Suena en la cámara que se está mirando (se ven ondas en ella) y Doña Florinda va hacia allá **solo si es vecina de la suya**: puesto detrás la aleja, puesto delante la acerca. Desde la reja ya no hace caso. Hay 3 s de espera entre usos. |
+| **Apariciones raras** | De vez en cuando (1 entre 10 000 por segundo en la noche 1, hasta 1 entre 5 000 en la 5 y la 6) se cuela una imagen casi transparente con su sonido. No afecta al juego. |
+| **Servicios del barril** | Llamar al Sr. Barriga (lo único que quita a Don Ramón, pero llamarlo sin necesidad es mortal), el audio de Quico, restablecer cámaras y restablecer todo. Mientras uno trabaja no se puede bajar el tablero, cambiar a las cámaras ni asomarse. |
 
 **Progresión:** noches 1 a 5 de campaña, la 6 se desbloquea al terminar la 5,
 y la Noche Personalizada (nivel de IA 0-20 por personaje) al terminar la 6.
@@ -36,10 +36,8 @@ y la Noche Personalizada (nivel de IA 0-20 por personaje) al terminar la 6.
 | `A` / `D` o `←` / `→` | Caminar entre Lavaderos, Barril y Entrada |
 | `S` / `↓` | Meterse al barril |
 | `W` / `↑` | Asomarse |
-| Clic | Encender y apagar la linterna |
-| `E` | Recoger el objeto que se tenga iluminado |
-| `1`-`7` | Arrojar el objeto de esa ranura hacia el cursor |
-| `C` | Combinar café con churrumino |
+| Clic | Encender y apagar la linterna (sostener el cursor sobre el punto débil espanta) |
+| `E` | Recoger la batería que se tenga iluminada |
 | `R` | Cambiar la batería de la linterna |
 | `ESPACIO` | Subir y bajar las cámaras (solo dentro del barril) |
 | `TAB` | Abrir el tablero de servicios (solo dentro del barril) |

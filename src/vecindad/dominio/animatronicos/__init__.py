@@ -8,7 +8,8 @@ El módulo está partido por responsabilidad:
 - entidad.py        -> Animatronic: su estado vivo durante la noche y la IA 0-20
 - elenco.py         -> los siete grafos de recorrido y su validación
 - progresion.py     -> qué nivel tiene cada uno en cada noche de la campaña
-- enfrentamiento.py -> qué pasa cara a cara: luz mortal y objetos arrojados
+- enfrentamiento.py -> qué pasa cara a cara: a quién se ve y a quién mata la luz
+- espanto.py        -> espantar con la luz: el punto débil que hay que sostener
 
 Este archivo reexporta lo que usa el resto del juego, así que basta con
 `from vecindad.dominio.animatronicos import crear_elenco_noche`.
@@ -30,16 +31,13 @@ from .elenco import (
     validar_elenco,
 )
 from .enfrentamiento import (
-    ResultadoArrojo,
     acechando,
     acechando_en,
     detectar_luz_mortal,
-    detectar_luz_que_descarga,
     iluminados_en,
-    objetivo_del_arrojo,
-    resolver_arrojo,
 )
 from .entidad import Animatronic, limitar_nivel_ia
+from .espanto import Espanto, PuntoDebil, ResultadoEspanto, se_espanta
 from .progresion import (
     HORA_ARRANQUE_POR_NOCHE,
     INTERVALO_POR_NOCHE,
@@ -65,13 +63,14 @@ __all__ = [
     "acechando",
     "grupos_de_escena",
     "POSES_POR_PERSONAJE",
-    "ResultadoArrojo",
     "acechando_en",
     "carpetas_de_atacantes",
     "crear_elenco_noche",
     "crear_elenco_personalizado",
     "detectar_luz_mortal",
-    "detectar_luz_que_descarga",
+    "Espanto",
+    "PuntoDebil",
+    "ResultadoEspanto",
     "habitaciones_posibles",
     "habitaciones_que_se_dibujan",
     "hora_de_arranque",
@@ -81,8 +80,7 @@ __all__ = [
     "nombres_del_elenco",
     "nombres_reconocidos_en_escenas",
     "niveles_iniciales_personalizada",
-    "objetivo_del_arrojo",
     "prefijos_por_nombre",
-    "resolver_arrojo",
+    "se_espanta",
     "validar_elenco",
 ]

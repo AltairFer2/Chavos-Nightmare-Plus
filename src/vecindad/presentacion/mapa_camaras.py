@@ -51,6 +51,11 @@ BOTONES_MAPA: Dict[str, Tuple[float, float, float, float]] = {
 COLOR_HOVER = (255, 255, 255, 46)
 COLOR_BORDE_HOVER = (210, 235, 255)
 
+# Por dónde se puede mover el mapa cuando se vuelve errático: nunca más abajo
+# de su sitio, para no meterse en la franja de las pestañas (pasar por ahí
+# baja el monitor), ni fuera de la pantalla.
+AREA_MOVIMIENTO_MAPA = pygame.Rect(0, 0, ANCHO_PANTALLA, RECT_MAPA.bottom)
+
 
 class MapaVecindad:
     """Menú de cámaras: sabe qué recuadro cae bajo el ratón y se dibuja."""
@@ -66,6 +71,23 @@ class MapaVecindad:
             NOMBRE_MAPA_SIN_SELECCION, DIR_ASSETS_CAMARAS / NOMBRE_MAPA_SIN_SELECCION
         )
         self._botones = self._calcular_botones()
+        self._desplazamiento = (0, 0)
+
+    @property
+    def desplazamiento(self):
+        return self._desplazamiento
+
+    @desplazamiento.setter
+    def desplazamiento(self, desplazamiento):
+        """Corre el mapa entero, botones incluidos, sin salirse de su área.
+        Lo dibujado y lo que responde al clic se mueven siempre juntos."""
+        movido = RECT_MAPA.move(desplazamiento).clamp(AREA_MOVIMIENTO_MAPA)
+        self._desplazamiento = (movido.x - RECT_MAPA.x, movido.y - RECT_MAPA.y)
+
+    @property
+    def rect(self) -> pygame.Rect:
+        """Dónde está el mapa ahora mismo."""
+        return RECT_MAPA.move(self._desplazamiento)
 
     @staticmethod
     def _calcular_botones() -> Dict[str, pygame.Rect]:
@@ -84,8 +106,11 @@ class MapaVecindad:
         """Habitación cuyo recuadro del mapa contiene ese punto, o None."""
         if posicion is None:
             return None
+        # Se mueve el punto al revés en vez de mover cada recuadro.
+        x = posicion[0] - self._desplazamiento[0]
+        y = posicion[1] - self._desplazamiento[1]
         for id_habitacion, rect in self._botones.items():
-            if rect.collidepoint(posicion):
+            if rect.collidepoint(x, y):
                 return id_habitacion
         return None
 
@@ -105,8 +130,8 @@ class MapaVecindad:
         # queda a medio alfa y sobre la imagen de la cámara se leería muy
         # flojo. Superponerlo consigo mismo lo refuerza sin devolverle el
         # fondo negro.
-        superficie.blit(mapa, RECT_MAPA)
-        superficie.blit(mapa, RECT_MAPA)
+        superficie.blit(mapa, self.rect)
+        superficie.blit(mapa, self.rect)
 
         self._dibujar_hover(superficie, id_activa, posicion_raton)
 
@@ -114,7 +139,7 @@ class MapaVecindad:
         id_hover = self.boton_en(posicion_raton)
         if id_hover is None or id_hover == id_activa:
             return
-        rect = self._botones[id_hover]
+        rect = self._botones[id_hover].move(self._desplazamiento)
         resaltado = pygame.Surface(rect.size, pygame.SRCALPHA)
         resaltado.fill(COLOR_HOVER)
         superficie.blit(resaltado, rect)

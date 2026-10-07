@@ -1,6 +1,6 @@
 """Lo que ocurre cuando el jugador y un animatrónico se encuentran cara a
-cara: a quién tiene delante, a quién está alumbrando, a quién mata la luz y
-a quién le da un objeto arrojado y qué le hace.
+cara: a quién tiene delante, a quién está alumbrando y a quién mata la luz.
+Espantar con la luz a los demás vive aparte, en espanto.py.
 
 Estar delante del jugador es estar en el Primer Patio, y punto: el Barril y
 los Lavaderos son dos ángulos del mismo sitio, así que desde los dos se ve a
@@ -12,20 +12,16 @@ Todo son funciones sobre una lista de animatrónicos, sin estado propio, para
 poder probarlas sin montar una partida entera.
 """
 
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
-from ...config.jugabilidad import SEGUNDOS_RETRASO_CHURRUMINO
 from ..linterna import esta_iluminado
-from ..objetos import ID_CHURRUMINO, obtener_objeto
-from . import nombres
 from .entidad import Animatronic
 
 
 def acechando(animatronics) -> List[Animatronic]:
     """Personajes que ya llegaron al Primer Patio y acechan al jugador, o sea
-    los que puede ver, alumbrar y a los que puede arrojarles algo, esté
-    asomado al barril o en los lavaderos."""
+    los que puede ver y alumbrar, esté asomado al barril o en los
+    lavaderos."""
     return [
         animatronic for animatronic in animatronics
         if animatronic.activo and animatronic.esta_acechando()
@@ -81,84 +77,3 @@ def detectar_luz_mortal(animatronics, id_posicion: str, punto_luz):
         animatronics, id_posicion, punto_luz,
         lambda a: a.configuracion.luz_mortal,
     )
-
-
-def detectar_luz_que_descarga(animatronics, id_posicion: str, punto_luz):
-    """Devuelve el personaje al que apuntarle cuesta la batería entera pero
-    no la vida, o None. Hoy solo La Chilindrina."""
-    return _alumbrado_de_cerca(
-        animatronics, id_posicion, punto_luz,
-        lambda a: a.configuracion.luz_descarga_linterna and not a.configuracion.luz_mortal,
-    )
-
-
-def objetivo_del_arrojo(animatronics, id_posicion: str, punto_mira):
-    """A quién le da un objeto arrojado hacia `punto_mira`, o None si no le
-    da a nadie.
-
-    Le da a quien tenga el punto dentro de su elipse de acierto (ver
-    Animatronic.semiejes_acierto). Si dos se pisan, a aquel en cuyo centro
-    caiga más de lleno: el objeto va a una sola persona.
-    """
-    if punto_mira is None:
-        return None
-    x, y = punto_mira
-    mas_cerca = None
-    menor_distancia = None
-    for animatronic in acechando_en(animatronics, id_posicion):
-        torso = animatronic.punto_torso_en(id_posicion)
-        semiancho, semialto = animatronic.semiejes_acierto()
-        # 0 en el torso, 1 justo en el borde de la elipse.
-        distancia = ((x - torso[0]) / semiancho) ** 2 + ((y - torso[1]) / semialto) ** 2
-        if distancia > 1.0:
-            continue
-        if menor_distancia is None or distancia < menor_distancia:
-            mas_cerca, menor_distancia = animatronic, distancia
-    return mas_cerca
-
-
-@dataclass
-class ResultadoArrojo:
-    """Qué pasó al arrojar un objeto: a quién le dio, y si a ese se lo llevó
-    por delante o solo lo entretuvo."""
-
-    alcanzado: Optional[Animatronic] = None
-    eliminado: Optional[Animatronic] = None
-    retrasado: Optional[Animatronic] = None
-
-    @property
-    def sirvio(self) -> bool:
-        return self.eliminado is not None or self.retrasado is not None
-
-
-def resolver_arrojo(alcanzado, id_objeto: str, iluminado: bool) -> ResultadoArrojo:
-    """Qué le hace el objeto a quien le dio (ver objetivo_del_arrojo).
-
-    Solo cuenta a quién le dio: si el tiro le cae a quien no era, se pierde
-    aunque detrás hubiera alguien a quien sí le servía.
-
-    - A Doña Clotilde solo le vale lo que haya pedido.
-    - El churrumino suelto no elimina a nadie: solo entretiene a El Chavo.
-    - Al resto se lo lleva su objeto, si lo acepta (Jaimico solo con luz).
-    """
-    if alcanzado is None:
-        return ResultadoArrojo()
-    resultado = ResultadoArrojo(alcanzado=alcanzado)
-
-    if alcanzado.objeto_pedido is not None:
-        if alcanzado.objeto_pedido == id_objeto:
-            alcanzado.ahuyentar()
-            resultado.eliminado = alcanzado
-        return resultado
-
-    if id_objeto == ID_CHURRUMINO:
-        if alcanzado.nombre == nombres.CHAVO:
-            alcanzado.retrasar(SEGUNDOS_RETRASO_CHURRUMINO)
-            resultado.retrasado = alcanzado
-        return resultado
-
-    le_sirve = alcanzado.nombre in obtener_objeto(id_objeto).elimina
-    if le_sirve and alcanzado.acepta_objeto(iluminado):
-        alcanzado.ahuyentar()
-        resultado.eliminado = alcanzado
-    return resultado

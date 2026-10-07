@@ -21,10 +21,10 @@ Cada cruce posible entre personajes necesita su propia imagen de cámara (ver
 presentacion/escenas_camara.py), así que ampliar un grafo multiplica el arte
 pendiente: conviene hacerlo a la vez que se dibuja.
 
-PENDIENTE: las contramedidas propias de cada personaje (llamar al Sr. Barriga
-para Don Ramón, la escoba de Doña Clotilde, los dos objetos de El Chavo, el
-café de Jaimico) todavía no están implementadas; por ahora todos se quitan de
-encima con los objetos genéricos y los servicios del barril.
+Don Ramón se va con el Sr. Barriga y Doña Florinda retrocede con el audio
+de Quico; al resto se le espanta con la linterna (ver dominio/espanto.py).
+PENDIENTE: las contramedidas propias que faltan de cada personaje (la escoba
+de Doña Clotilde, la irrupción de El Chavo al romper las cámaras).
 """
 
 from typing import Dict, FrozenSet, List, Sequence, Tuple
@@ -124,15 +124,13 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
         espera_ataque_rapida=6.0,
         carpeta_sprite="quico",
         prefijo_sprite="quico",
-        # A Quico se le arroja a oscuras. No lleva necesita_luz_para_recibir
-        # a propósito: alumbrarlo es mortal, así que exigir luz para que
-        # recogiera la pelota dejaba su contramedida imposible de ejecutar.
+        se_espanta_con_luz=True,
     ),
     ConfiguracionAnimatronic(
         nombre=nombres.CHILINDRINA,
         # La que más vueltas da: recorre las casas del vecindario en círculo y
         # puede volver sobre sus pasos, así que tarda pero llega desde
-        # cualquier lado. Al recibir su paleta se va a su casa.
+        # cualquier lado. Al espantarla se va a su casa.
         habitacion_inicial="casa_ramon",
         transiciones={
             "casa_ramon":     ("casa_clotilde", "casa_paty"),
@@ -151,16 +149,19 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
         espera_ataque_rapida=6.0,
         carpeta_sprite="chilindrina",
         prefijo_sprite="chilindrina",
-        # A ella la luz no la mata: se lleva la batería entera y ya. Se quita
-        # de encima con la paleta o el balero, no con la linterna.
+        # A ella la luz no la mata y se espanta como los demás, pero no
+        # perdona fallar: alumbrarle el cuerpo fuera del punto débil se lleva
+        # la batería entera.
+        se_espanta_con_luz=True,
         luz_descarga_linterna=True,
     ),
     ConfiguracionAnimatronic(
         nombre=nombres.FLORINDA,
         # La única con recorrido en fila: 14 -> 82 -> 97 -> 2 -> 3 -> 1, sin
-        # atajos. El audio la hace retroceder un paso (retrocesos), y desde el
-        # Segundo Patio puede caer en cualquiera de las dos casas de arriba.
-        # Al llegar a la reja el audio deja de servir: ahí ya no retrocede.
+        # atajos. El audio de Quico la lleva a la cámara donde suena si es
+        # vecina de la suya (su recorrido de ida y vuelta, más retrocesos:
+        # desde el Segundo Patio linda con las dos casas de arriba). Al
+        # llegar a la reja el audio deja de servir.
         habitacion_inicial="casa_florinda",
         transiciones={
             "casa_florinda":  ("casa_godinez",),
@@ -175,6 +176,7 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
             "casa_popis":     ("casa_godinez",),
             "segundo_patio":  ("casa_godinez", "casa_popis"),
         },
+        sorda_en=("entrada",),
         puntos_acecho={
             POSICION_BARRIL: (520, 658),
             POSICION_LAVADEROS: (720, 660),
@@ -205,6 +207,7 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
         espera_ataque_rapida=8.0,
         carpeta_sprite="chavo",
         prefijo_sprite="chavo",
+        se_espanta_con_luz=True,
     ),
     ConfiguracionAnimatronic(
         nombre=nombres.JAIMICO,
@@ -224,14 +227,14 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
         espera_ataque_rapida=20.0,
         carpeta_sprite="jaimico",
         prefijo_sprite="jaimico",
-        necesita_luz_para_recibir=True,
+        se_espanta_con_luz=True,
     ),
     ConfiguracionAnimatronic(
         nombre=nombres.CLOTILDE,
         # Sale de su casa al Segundo Patio y ahí se queda esperando a Don
         # Ramón: no se mueve a ningún lado mientras él no esté donde ella
         # necesita. Si él anda por la reja, ella baja sobre el jugador; si
-        # está metido en su casa, se vuelve. Con la escoba regresa a la 71.
+        # está metido en su casa, se vuelve. Al espantarla regresa a la 71.
         habitacion_inicial="casa_clotilde",
         transiciones={
             "casa_clotilde":  ("segundo_patio",),
@@ -250,7 +253,7 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
         espera_ataque_rapida=7.0,
         carpeta_sprite="bruja",
         prefijo_sprite="clotilde",
-        pide_objeto=True,
+        se_espanta_con_luz=True,
     ),
 )
 

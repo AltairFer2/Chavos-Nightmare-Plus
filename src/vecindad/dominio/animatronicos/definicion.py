@@ -27,12 +27,13 @@ Pasos condicionados
 en cierta cámara. Solo lo usa Doña Clotilde, que desde el Segundo Patio no se
 mueve a ningún lado mientras Don Ramón no esté donde ella necesita.
 
-Retrocesos
-----------
-`retrocesos` es el camino de vuelta cuando algo la empuja hacia atrás sin
-mandarla a su casa. Solo lo usa Doña Florinda: el audio le quita una cámara
-de terreno, no la reinicia. Las cámaras que no aparecen ahí son aquellas
-desde las que el audio ya no le hace efecto.
+Retrocesos y audio
+------------------
+`retrocesos` son pasos hacia atrás que su recorrido no trae de ida (del
+Segundo Patio a la casa de los Godínez, por ejemplo). Solo los usa Doña
+Florinda: junto con su recorrido forman el mapa de cámaras vecinas por el
+que la mueve el audio de Quico (ver Animatronic.atraer_a). `sorda_en` son
+las cámaras desde las que el audio ya no le hace efecto.
 """
 
 from dataclasses import dataclass, field
@@ -70,27 +71,29 @@ class ConfiguracionAnimatronic:
     espera_ataque_rapida: float  # segundos de margen con nivel_ia 20
     # Aristas que solo se abren si otro personaje está en cierta cámara.
     condiciones_de_paso: Mapping[Tuple[str, str], Condicion] = field(default_factory=dict)
-    # Camino de vuelta cuando se le hace retroceder sin reiniciarlo.
+    # Pasos hacia atrás que el recorrido no trae de ida; cuentan como
+    # cámaras vecinas para el audio de Quico.
     retrocesos: Mapping[str, Destinos] = field(default_factory=dict)
+    # Cámaras desde las que el audio de Quico ya no la mueve.
+    sorda_en: Tuple[str, ...] = ()
     # Arte: assets/animatronics/<carpeta>/<prefijo> <n>.png. La carpeta y el
     # prefijo no siempre coinciden (bruja/clotilde, don ramon/ramon).
     carpeta_sprite: str = ""
     prefijo_sprite: str = ""
     luz_mortal: bool = False  # iluminarlo de cerca mata al instante
-    # La Chilindrina: alumbrarla no mata, pero se lleva la batería entera.
-    # No corta la noche ni avisa de nada: el jugador se entera porque se
-    # queda a oscuras de golpe.
+    # Se le quita de encima sosteniendo el haz sobre su punto débil (ver
+    # dominio/espanto.py). Todos menos Don Ramón y Doña Florinda, que tienen
+    # su propio servicio y a quienes la luz mata.
+    se_espanta_con_luz: bool = False
+    # La Chilindrina: alumbrarle el cuerpo fuera del punto débil más de un
+    # momento se lleva la batería entera. No corta la noche ni avisa de nada:
+    # el jugador se entera porque se queda a oscuras de golpe.
     luz_descarga_linterna: bool = False
     # Si puede acabar con el jugador mientras está metido en el barril. Solo
     # Don Ramón y Doña Florinda pueden desde que llegan: son los que rompen
     # el refugio y obligan a salir. Del resto se está a salvo escondido...
     # hasta que se les alumbre, porque eso los activa (ver Animatronic).
     alcanza_escondido: bool = False
-    # Quico y Jaimico solo hacen caso de lo que se les arroja si están
-    # alumbrados; El Chavo y los demás lo recogen de todos modos.
-    necesita_luz_para_recibir: bool = False
-    # Doña Clotilde: al llegar dice qué objeto anda buscando.
-    pide_objeto: bool = False
     # Llegar al Primer Patio acaba la noche en el acto, sin margen de
     # reacción. Solo Doña Florinda. Tiene una consecuencia práctica: no hace
     # falta dibujarla en la cámara 1, porque para cuando estuviera ahí la
