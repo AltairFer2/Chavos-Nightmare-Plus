@@ -271,3 +271,20 @@ def obtener_habitacion(id_habitacion: str) -> Habitacion:
 
 def son_adyacentes(id_a: str, id_b: str) -> bool:
     return id_b in obtener_habitacion(id_a).conexiones
+
+
+def distancia_al_jugador(id_habitacion: str) -> int:
+    """Cuántos pasos hay por la vecindad desde esa habitación hasta el
+    Primer Patio: 1 para las que dan a él, 2 para las del Segundo Patio.
+    Se mide sobre la geometría real (las conexiones), no sobre el
+    recorrido de ningún personaje."""
+    obtener_habitacion(id_habitacion)
+    distancias = {HABITACION_JUGADOR: 0}
+    pendientes = [HABITACION_JUGADOR]
+    while pendientes:
+        actual = pendientes.pop(0)
+        for vecina in HABITACIONES[actual].conexiones:
+            if vecina not in distancias:
+                distancias[vecina] = distancias[actual] + 1
+                pendientes.append(vecina)
+    return distancias[id_habitacion]

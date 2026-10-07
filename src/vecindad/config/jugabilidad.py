@@ -1,5 +1,6 @@
 """Números que definen las mecánicas: linterna, baterías del suelo, espantar
-con la luz, servicios del barril y sabotaje de las cámaras.
+con la luz, objetos que se buscan en las cámaras, servicios del barril y
+sabotaje de las cámaras.
 
 Es el archivo que se toca para equilibrar el juego. No contiene nada de
 render: lo visual vive en config/interfaz.py.
@@ -75,6 +76,32 @@ PUNTO_DEBIL_DRENADO = 0.4
 # La Chilindrina castiga fallar: alumbrarle el cuerpo fuera del punto más de
 # este rato seguido le descarga la batería entera al jugador.
 CHILINDRINA_GRACIA_SEGUNDOS = 0.6
+# Jaimico es el más difícil de espantar: su punto débil se porta siempre
+# como el de este punto de la escala (0.0 es nivel 1 y 1.0 nivel 20), sea
+# cual sea su nivel. Ojo, la dificultad no sube pareja: por encima de ~0.5
+# el punto corre más de lo que el jugador tarda en reaccionar y se vuelve
+# casi imposible (medido con un jugador simulado: con 0.5 tarda ~7 s y falla
+# 1 de cada 14 intentos; con 1.0 no lo logra nunca).
+PUNTO_DEBIL_FACTOR_MAS_DIFICIL = 0.5
+
+# --- Objetos que se buscan en las cámaras (ver dominio/busqueda.py) ---
+# Al aparecer Doña Clotilde (escoba) o Jaimico (café), su objeto se esconde
+# en una cámara al azar, nunca en la del Chavo (8, solo tiene micrófono), y
+# hay que encontrarlo y hacerle clic antes de que se acabe el tiempo.
+# Doña Clotilde: el tiempo depende de lo lejos del Primer Patio que haya
+# aparecido: BUSQUEDA_SEGUNDOS_MINIMOS en las cámaras que dan al patio y
+# BUSQUEDA_SEGUNDOS_POR_PASO más por cada paso extra (las del Segundo
+# Patio). Jaimico: depende de su nivel (ver su ficha en elenco.py).
+BUSQUEDA_SEGUNDOS_MINIMOS = 10.0
+BUSQUEDA_SEGUNDOS_POR_PASO = 5.0
+# Sitios del monitor (lienzo de 1280x720) donde puede quedar el objeto. Están
+# lejos del mapa, del botón de audio, del HUD y de los rótulos del marco.
+SITIOS_OBJETOS_BUSCADOS = (
+    (380, 470), (430, 300), (620, 480), (760, 250),
+    (290, 540), (560, 380), (200, 300), (700, 400),
+)
+# Distancia del clic al centro del objeto dentro de la cual se encuentra.
+OBJETO_BUSCADO_RADIO_CLIC = 70
 
 # --- Servicios de utilidad del barril ---
 SERVICIO_AUDIO_SEGUNDOS = 5.0

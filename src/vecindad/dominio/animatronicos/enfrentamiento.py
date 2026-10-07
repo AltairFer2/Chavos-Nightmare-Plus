@@ -12,7 +12,7 @@ Todo son funciones sobre una lista de animatrónicos, sin estado propio, para
 poder probarlas sin montar una partida entera.
 """
 
-from typing import List
+from typing import List, Optional
 
 from ..linterna import esta_iluminado
 from .entidad import Animatronic
@@ -39,6 +39,16 @@ def acechando_en(animatronics, id_posicion: str) -> List[Animatronic]:
         animatronic for animatronic in acechando(animatronics)
         if animatronic.punto_acecho_en(id_posicion) is not None
     ]
+
+
+def inminencia_en_el_patio(animatronics) -> Optional[float]:
+    """Lo cerca que está el ataque más próximo, de 0.0 a 1.0, entre todos
+    los que acechan; None si el patio está vacío. Es lo que mide la alerta
+    de peligro (el sonido y la imagen que se apaga y tiembla)."""
+    presentes = acechando(animatronics)
+    if not presentes:
+        return None
+    return max(animatronic.inminencia() for animatronic in presentes)
 
 
 def iluminados_en(animatronics, id_posicion: str, punto_luz, encendida: bool):

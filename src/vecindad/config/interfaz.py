@@ -55,6 +55,16 @@ OBJETO_PARPADEOS_POR_SEGUNDO = 4
 APARICION_RARA_OPACIDAD = 34
 APARICION_RARA_FUNDIDO = 0.3
 
+# --- Alerta de peligro (alguien en el Primer Patio) ---
+# Con alguien acechando, la imagen va y viene entre color y un blanco y negro
+# más oscuro, y tiembla. Cada par (llegada, ataque) se interpola con lo cerca
+# que está el ataque más próximo: el vaivén se acelera (segundos de un ciclo
+# completo) y el temblor crece (píxeles). PELIGRO_OSCURIDAD es la opacidad
+# (0-255) del negro que se le pone encima en el punto más gris.
+PELIGRO_PERIODO_SEGUNDOS = (1.6, 0.2)
+PELIGRO_TEMBLOR_PIXELES = (1, 12)
+PELIGRO_OSCURIDAD = 90
+
 # --- Punto débil (espantar con la luz) ---
 # Se dibuja debajo de la penumbra, como la figura: solo se ve con el haz
 # encima. El halo late para leerse sobre cualquier ropa, y alrededor un arco
@@ -114,14 +124,25 @@ CAMARA_MAPA_MARGEN_INFERIOR = 78  # deja libre la franja del HUD
 # cámara cueste. La intensidad arranca en CAMARA_ERRATICO_INTENSIDAD_MINIMA
 # nada más verlo y sube con la presión del sabotaje hasta 1.
 # Amplitud en píxeles (x, y), cada cuánto cambia de destino (mín, máx) y
-# qué tan rápido lo persigue, por segundo.
+# qué tan rápido lo persigue, por segundo. Esos valores son los de El Chavo
+# con nivel 20: con menos nivel se escalan por los factores *_POR_IA (nivel
+# 1, nivel 20), la amplitud de los saltos y su ritmo.
 CAMARA_ERRATICO_INTENSIDAD_MINIMA = 0.6
+CAMARA_ERRATICO_AMPLITUD_POR_IA = (0.3, 1.0)
+CAMARA_ERRATICO_RITMO_POR_IA = (0.35, 1.0)
 CAMARA_ERRATICO_MAPA_AMPLITUD = (260, 170)
 CAMARA_ERRATICO_MAPA_CAMBIO_SEGUNDOS = (0.18, 0.45)
 CAMARA_ERRATICO_MAPA_PERSECUCION = 14.0
 CAMARA_ERRATICO_VISTA_AMPLITUD = (45, 28)
 CAMARA_ERRATICO_VISTA_CAMBIO_SEGUNDOS = (0.04, 0.12)
 CAMARA_ERRATICO_VISTA_PERSECUCION = 30.0
+
+# Objetos que se buscan en las cámaras (la escoba y el café): alto con que se
+# dibujan, en píxeles, y cuánto se apagan (0-255, 255 es tal cual) para que
+# no brillen sobre la penumbra de las cámaras. Dónde quedan es una regla de
+# juego y vive en config/jugabilidad.py.
+OBJETO_BUSCADO_ALTO = {"escoba": 170, "cafe": 90}
+OBJETO_BUSCADO_BRILLO = 175
 
 # Ruido de señal sobre la imagen de la cámara.
 CAMARA_ESTATICA_FRAMES = 6

@@ -21,10 +21,11 @@ Cada cruce posible entre personajes necesita su propia imagen de cámara (ver
 presentacion/escenas_camara.py), así que ampliar un grafo multiplica el arte
 pendiente: conviene hacerlo a la vez que se dibuja.
 
-Don Ramón se va con el Sr. Barriga y Doña Florinda retrocede con el audio
-de Quico; al resto se le espanta con la linterna (ver dominio/espanto.py).
-PENDIENTE: las contramedidas propias que faltan de cada personaje (la escoba
-de Doña Clotilde, la irrupción de El Chavo al romper las cámaras).
+Don Ramón se va con el Sr. Barriga y Doña Florinda se mueve con el audio
+de Quico. El Chavo, Jaimico y Doña Clotilde no empiezan en ninguna cámara:
+aparecen según su nivel. A Doña Clotilde y a Jaimico se les quita de encima
+encontrando su objeto en las cámaras (ver dominio/busqueda.py); a quien llega
+al patio se le espanta con la linterna (ver dominio/espanto.py).
 """
 
 from typing import Dict, FrozenSet, List, Sequence, Tuple
@@ -58,9 +59,9 @@ NOMBRE_TODO_EL_ELENCO = "todos"
 # invisible.
 VISTAS_DEL_PATIO: Tuple[str, ...] = (POSICION_BARRIL, POSICION_LAVADEROS)
 
-# Las nueve cámaras por las que El Chavo deambula. No entra a la de Doña
-# Clotilde, y al Primer Patio solo llega si el jugador lo mira demasiado
-# rato seguido, nunca por su propio dado.
+# Las nueve cámaras en las que El Chavo aparece y por las que deambula. No
+# entra a la de Doña Clotilde, y al Primer Patio solo llega si el jugador lo
+# mira demasiado rato seguido, nunca por su propio dado.
 CAMARAS_DEL_CHAVO: Tuple[str, ...] = (
     "casa_chavo",      # 8, donde empieza y donde se le oye
     "casa_ramon",      # 72
@@ -71,6 +72,13 @@ CAMARAS_DEL_CHAVO: Tuple[str, ...] = (
     "casa_popis",      # 97
     "segundo_patio",   # 2
     "entrada",         # 3
+)
+
+# Doña Clotilde aparece en cualquier cámara menos en el Primer Patio: ahí
+# nunca está de verdad, aunque al aparecer suene y se vea como si lo
+# estuviera.
+CAMARAS_DE_LA_BRUJA: Tuple[str, ...] = tuple(
+    id_habitacion for id_habitacion in HABITACIONES if id_habitacion != HABITACION_JUGADOR
 )
 
 
@@ -151,17 +159,22 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
         prefijo_sprite="chilindrina",
         # A ella la luz no la mata y se espanta como los demás, pero no
         # perdona fallar: alumbrarle el cuerpo fuera del punto débil se lleva
-        # la batería entera.
+        # la batería entera. Su punto débil cuenta solo 0.6 de su nivel: con
+        # el 12 entero tardaba ~9 s en espantarse y casi siempre acababa
+        # descargando la batería por el camino.
         se_espanta_con_luz=True,
         luz_descarga_linterna=True,
+        punto_debil_escala=0.6,
     ),
     ConfiguracionAnimatronic(
         nombre=nombres.FLORINDA,
         # La única con recorrido en fila: 14 -> 82 -> 97 -> 2 -> 3 -> 1, sin
         # atajos. El audio de Quico la lleva a la cámara donde suena si es
         # vecina de la suya (su recorrido de ida y vuelta, más retrocesos:
-        # desde el Segundo Patio linda con las dos casas de arriba). Al
-        # llegar a la reja el audio deja de servir.
+        # desde el Segundo Patio linda con las casas de arriba, la de Paty
+        # incluida). A la de Paty (84) solo llega llevada por el audio, y de
+        # ahí vuelve sola al Segundo Patio. Al llegar a la reja el audio deja
+        # de servir.
         habitacion_inicial="casa_florinda",
         transiciones={
             "casa_florinda":  ("casa_godinez",),
@@ -169,12 +182,13 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
             "casa_popis":     ("segundo_patio",),
             "segundo_patio":  ("entrada",),
             "entrada":        (HABITACION_JUGADOR,),
+            "casa_paty":      ("segundo_patio",),
             HABITACION_JUGADOR: (),
         },
         retrocesos={
             "casa_godinez":   ("casa_florinda",),
             "casa_popis":     ("casa_godinez",),
-            "segundo_patio":  ("casa_godinez", "casa_popis"),
+            "segundo_patio":  ("casa_godinez", "casa_popis", "casa_paty"),
         },
         sorda_en=("entrada",),
         puntos_acecho={
@@ -191,13 +205,16 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
     ),
     ConfiguracionAnimatronic(
         nombre=nombres.CHAVO,
-        # No tiene ruta: salta de cualquier cámara a cualquier otra. Al Primer
-        # Patio no llega tirando el dado, solo si el jugador lo mira demasiado
-        # rato seguido; por eso la 1 aparece aquí sin que nada apunte a ella.
-        habitacion_inicial="casa_chavo",
+        # No empieza en ninguna cámara: aparece en una al azar según su
+        # nivel, y de ahí salta de cualquiera a cualquier otra. Al Primer
+        # Patio no llega tirando el dado, solo si el jugador lo mira
+        # demasiado rato seguido; por eso la 1 aparece aquí sin que nada
+        # apunte a ella. Al espantarlo desaparece y puede volver a aparecer.
+        habitacion_inicial=None,
+        aparece_en=CAMARAS_DEL_CHAVO,
         transiciones={
             **_deambular(CAMARAS_DEL_CHAVO),
-            HABITACION_JUGADOR: ("casa_chavo",),
+            HABITACION_JUGADOR: (),
         },
         puntos_acecho={
             POSICION_BARRIL: (640, 665),
@@ -211,14 +228,22 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
     ),
     ConfiguracionAnimatronic(
         nombre=nombres.JAIMICO,
-        # El más corto de todos: casa, patio y encima. Desde el Segundo Patio
-        # decide si baja o se devuelve, y vigilarlo por cámara lo frena.
-        habitacion_inicial="casa_jaimito",
+        # Solo aparece en su casa (23), según su nivel, y ahí se queda: hay
+        # que encontrar su café en las cámaras antes de que se acabe el
+        # tiempo (20 s con nivel 1, 7 s con nivel 20). Si no, se planta en
+        # el Primer Patio y hay que espantarlo con la luz, y su punto débil
+        # es el más difícil de todos. Al espantarlo o al encontrar el café
+        # desaparece.
+        habitacion_inicial=None,
+        aparece_en=("casa_jaimito",),
+        probabilidad_aparicion=0.35,
         transiciones={
-            "casa_jaimito":   ("segundo_patio",),
-            "segundo_patio":  ("casa_jaimito", HABITACION_JUGADOR),
-            HABITACION_JUGADOR: ("segundo_patio",),
+            "casa_jaimito":   (),
+            HABITACION_JUGADOR: (),
         },
+        objeto_buscado="cafe",
+        busqueda_segundos=(20.0, 7.0),
+        punto_debil_mas_dificil=True,
         puntos_acecho={
             POSICION_BARRIL: (200, 645),
             POSICION_LAVADEROS: (1040, 652),
@@ -231,20 +256,19 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
     ),
     ConfiguracionAnimatronic(
         nombre=nombres.CLOTILDE,
-        # Sale de su casa al Segundo Patio y ahí se queda esperando a Don
-        # Ramón: no se mueve a ningún lado mientras él no esté donde ella
-        # necesita. Si él anda por la reja, ella baja sobre el jugador; si
-        # está metido en su casa, se vuelve. Al espantarla regresa a la 71.
-        habitacion_inicial="casa_clotilde",
-        transiciones={
-            "casa_clotilde":  ("segundo_patio",),
-            "segundo_patio":  (HABITACION_JUGADOR, "casa_clotilde"),
-            HABITACION_JUGADOR: ("casa_clotilde",),
-        },
-        condiciones_de_paso={
-            ("segundo_patio", HABITACION_JUGADOR): (nombres.DON_RAMON, "entrada"),
-            ("segundo_patio", "casa_clotilde"): (nombres.DON_RAMON, "casa_clotilde"),
-        },
+        # Aparece según su nivel en cualquier cámara menos el Primer Patio y
+        # no se mueve de ahí: hay que encontrar su escoba en las cámaras.
+        # Cuanto más lejos del patio aparece, más tiempo hay; si se acaba,
+        # mata en el acto, esté el jugador donde esté. Al encontrar la
+        # escoba desaparece. Nunca llega al patio, así que su punto de
+        # acecho solo sirve para saber de qué lado suenan sus pasos.
+        habitacion_inicial=None,
+        aparece_en=CAMARAS_DE_LA_BRUJA,
+        probabilidad_aparicion=0.2,
+        transiciones={camara: () for camara in CAMARAS_DE_LA_BRUJA},
+        objeto_buscado="escoba",
+        busqueda_por_distancia=True,
+        busqueda_mortal=True,
         puntos_acecho={
             POSICION_BARRIL: (1080, 668),
             POSICION_LAVADEROS: (1160, 665),
@@ -253,7 +277,6 @@ ELENCO: Tuple[ConfiguracionAnimatronic, ...] = (
         espera_ataque_rapida=7.0,
         carpeta_sprite="bruja",
         prefijo_sprite="clotilde",
-        se_espanta_con_luz=True,
     ),
 )
 
@@ -341,12 +364,25 @@ def _validar_grafo(config: ConfiguracionAnimatronic):
     """El grafo tiene que ser recorrible: toda cámara a la que se puede
     llegar debe tener su propia entrada en transiciones, o el personaje se
     quedaría encerrado ahí para el resto de la noche."""
-    if config.habitacion_inicial not in config.transiciones:
+    if config.habitacion_inicial is None and not config.aparece_en:
         raise ValueError(
-            f"{config.nombre}: empieza en {config.habitacion_inicial}, que no "
-            f"tiene transiciones"
+            f"{config.nombre}: no empieza en ninguna cámara ni tiene dónde aparecer"
         )
-    if HABITACION_JUGADOR not in config.transiciones:
+    for inicio in (config.habitacion_inicial, *config.aparece_en):
+        if inicio is not None and inicio not in config.transiciones:
+            raise ValueError(
+                f"{config.nombre}: empieza o aparece en {inicio}, que no tiene "
+                f"transiciones"
+            )
+    if config.busqueda_mortal:
+        # Nunca llega al patio: si no la encuentran a tiempo, mata desde su
+        # cámara.
+        if HABITACION_JUGADOR in config.habitaciones():
+            raise ValueError(
+                f"{config.nombre}: mata al acabarse la búsqueda, no puede "
+                f"llegar al {HABITACION_JUGADOR}"
+            )
+    elif HABITACION_JUGADOR not in config.transiciones:
         raise ValueError(
             f"{config.nombre}: le falta la entrada de {HABITACION_JUGADOR}, que "
             f"es por donde se va cuando el jugador se lo quita de encima"

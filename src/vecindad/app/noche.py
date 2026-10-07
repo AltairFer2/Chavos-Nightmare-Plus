@@ -20,6 +20,8 @@ from ..dominio.animatronicos import (
 # Motivo de derrota por defecto: el personaje simplemente llegó hasta el
 # jugador. Los demás casos (la luz, el Señor Barriga) lo sustituyen.
 MOTIVO_ATRAPADO = "game_over_motivo"
+# Doña Clotilde: se acabó el tiempo para encontrar su escoba.
+MOTIVO_ESCOBA = "game_over_escoba"
 
 
 @dataclass

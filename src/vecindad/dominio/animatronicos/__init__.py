@@ -35,6 +35,7 @@ from .enfrentamiento import (
     acechando_en,
     detectar_luz_mortal,
     iluminados_en,
+    inminencia_en_el_patio,
 )
 from .entidad import Animatronic, limitar_nivel_ia
 from .espanto import Espanto, PuntoDebil, ResultadoEspanto, se_espanta
@@ -75,6 +76,7 @@ __all__ = [
     "habitaciones_que_se_dibujan",
     "hora_de_arranque",
     "iluminados_en",
+    "inminencia_en_el_patio",
     "intervalo_de_movimiento",
     "limitar_nivel_ia",
     "nombres_del_elenco",

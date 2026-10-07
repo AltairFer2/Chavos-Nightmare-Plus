@@ -15,12 +15,15 @@ salió algún texto.
 """
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pygame
 import pytest
 
 from vecindad.app.estados import EstadoJuego
 from vecindad.config.audio import (
+    ALERTA_PATIO_VOLUMEN,
+    EFECTO_ALERTA_PATIO,
     EFECTO_EASTER_EGG,
     EFECTO_ENCENDIDO_CAMARAS,
     EFECTO_INTERFERENCIA,
@@ -37,12 +40,14 @@ from vecindad.config.interfaz import (
     TIRAS_BLOQUEO_SEGUNDOS,
 )
 from vecindad.config.partida import (
+    NIVEL_IA_MAXIMO,
     NOCHE_EXTRA,
     PERIODICO_SEGUNDOS,
     TARJETA_NOCHE_SEGUNDOS,
 )
 from vecindad.config.jugabilidad import (
     AUDIO_QUICO_ESPERA_SEGUNDOS,
+    BUSQUEDA_SEGUNDOS_MINIMOS,
     CAMARA_INTERFERENCIA_MAXIMA_SEGUNDOS,
     CAMARA_INTERFERENCIA_MINIMA_SEGUNDOS,
     CAMARA_SABOTAJE_POR_NOCHE,
@@ -54,6 +59,7 @@ from vecindad.config.jugabilidad import (
 from vecindad.config.ventana import ANCHO_PANTALLA
 from vecindad.dominio.animatronicos import ELENCO, nombres
 from vecindad.dominio.aparicion_rara import AparicionesRaras
+from vecindad.dominio.busqueda import CAMARAS_CON_OBJETOS
 from vecindad.dominio.objetos import ID_BATERIA, ObjetosEnElSuelo, obtener_objeto
 from vecindad.dominio.servicios import Servicio
 from vecindad.presentacion.hud import RECT_TIRA_BAJAR, RECT_TIRA_CAMARAS
@@ -1419,3 +1425,231 @@ class TestAparicionesEnLaPartida:
         assert juego.apariciones.uno_entre == 5000
         empezar_noche(juego, 1)
         assert juego.apariciones.uno_entre == 10000
+
+
+class TestAlertaDelPatio:
+    """Con alguien en el patio suena un aviso en bucle y la imagen va y
+    viene entre color y gris; las dos cosas apuran conforme se acerca el
+    ataque."""
+
+    @pytest.fixture
+    def bucle(self, juego, monkeypatch):
+        """Lo que se le pide al bucle de audio: el último volumen, o None si
+        se mandó callar."""
+        estado = {"volumen": None, "nombre": None}
+
+        def sonar(nombre, subcarpeta, intensidad=1.0):
+            estado["nombre"] = nombre
+            estado["volumen"] = intensidad
+
+        def callar():
+            estado["volumen"] = None
+
+        monkeypatch.setattr(juego.audio, "sonar_en_bucle", sonar)
+        monkeypatch.setattr(juego.audio, "detener_bucle", callar)
+        return estado
+
+    @pytest.fixture
+    def quico(self, juego):
+        empezar_noche(juego, NOCHE_CON_TODOS)
+        quico = _solo(juego, nombres.QUICO)
+        quico.irrumpir()
+        juego.jugador.posicion = POSICION_BARRIL
+        return quico
+
+    def _fotograma(self, juego):
+        juego._actualizar(FOTOGRAMA)
+        juego._sonar_alerta_del_patio()
+
+    def test_con_el_patio_vacio_no_suena_ni_se_ve(self, juego, bucle):
+        empezar_noche(juego, 1)
+        for animatronic in juego.noche.animatronics:
+            animatronic.activo = False
+        self._fotograma(juego)
+        assert bucle["volumen"] is None
+        assert not juego.alerta_peligro.activa
+
+    def test_con_alguien_en_el_patio_suena_y_se_ve(self, juego, bucle, quico):
+        self._fotograma(juego)
+        assert bucle["nombre"] == EFECTO_ALERTA_PATIO
+        assert bucle["volumen"] == pytest.approx(ALERTA_PATIO_VOLUMEN[0], abs=0.05)
+        assert juego.alerta_peligro.activa
+
+    def test_tambien_suena_dentro_del_barril_mirando_las_camaras(self, juego, bucle, quico):
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        juego.sistema_camaras.activo = True
+        juego.sistema_camaras.animacion.cancelar()
+        self._fotograma(juego)
+        assert bucle["volumen"] is not None
+        juego._dibujar()  # el monitor también se tiñe, sin fallar
+
+    def test_sube_conforme_se_acerca_el_ataque(self, juego, bucle, quico):
+        self._fotograma(juego)
+        al_llegar = bucle["volumen"]
+        periodo_al_llegar = juego.alerta_peligro.periodo()
+        quico.segundos_para_atacar = quico.espera_de_ataque() * 0.1
+        self._fotograma(juego)
+        assert bucle["volumen"] > al_llegar
+        assert juego.alerta_peligro.periodo() < periodo_al_llegar
+
+    def test_al_espantarlo_se_calla(self, juego, bucle, quico):
+        self._fotograma(juego)
+        quico.ahuyentar()
+        self._fotograma(juego)
+        assert bucle["volumen"] is None
+        assert not juego.alerta_peligro.activa
+
+    def test_al_morir_se_calla(self, juego, bucle, quico):
+        quico.segundos_para_atacar = FOTOGRAMA / 2
+        self._fotograma(juego)
+        assert not _sigue_jugando(juego)
+        assert bucle["volumen"] is None
+
+    def test_en_pausa_sigue_y_al_salir_al_menu_se_calla(self, juego, bucle, quico):
+        self._fotograma(juego)
+        juego._pausar()
+        juego._sonar_alerta_del_patio()
+        assert bucle["volumen"] is not None
+        juego.volver_al_menu()
+        juego._sonar_alerta_del_patio()
+        assert bucle["volumen"] is None
+
+    def test_el_hud_no_se_tine(self, juego, quico, monkeypatch):
+        """La hora y la batería se tienen que poder leer."""
+        llamadas = []
+        monkeypatch.setattr(
+            juego.alerta_peligro, "dibujar", lambda superficie: llamadas.append("alerta")
+        )
+        monkeypatch.setattr(
+            juego.interfaz, "dibujar_hud", lambda *a, **k: llamadas.append("hud")
+        )
+        self._fotograma(juego)
+        juego._dibujar()
+        assert llamadas == ["alerta", "hud"]
+
+
+class TestBuscarEnLasCamaras:
+    """La escoba de Doña Clotilde y el café de Jaimico: aparecen, su objeto
+    se esconde en una cámara y hay que encontrarlo a tiempo."""
+
+    @pytest.fixture
+    def bruja(self, juego):
+        empezar_noche(juego, NOCHE_CON_TODOS)
+        bruja = _solo(juego, nombres.CLOTILDE)
+        bruja.habitacion_actual = "entrada"
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        return bruja
+
+    def _mirar(self, juego, camara):
+        juego.sistema_camaras.activo = True
+        juego.sistema_camaras.animacion.cancelar()
+        juego.sistema_camaras.camara_actual = camara
+
+    def _escoba(self, juego):
+        (busqueda,) = juego.busquedas.activas
+        return busqueda
+
+    def test_al_aparecer_suena_y_se_ve_como_si_hubiera_alguien(self, juego, bruja, efectos):
+        _correr(juego, FOTOGRAMA)
+        assert set(efectos) & {EFECTO_PASOS_IZQUIERDA, EFECTO_PASOS_DERECHA}
+        assert juego.alerta_peligro.activa
+        assert juego._inminencia_del_peligro() is not None
+        assert not bruja.esta_acechando()
+
+    def test_si_no_se_encuentra_a_tiempo_mata(self, juego, bruja):
+        _correr(juego, BUSQUEDA_SEGUNDOS_MINIMOS + 0.2)
+        assert not _sigue_jugando(juego)
+        assert juego.noche.derrota.nombre_atacante == nombres.CLOTILDE
+        assert juego.noche.derrota.clave_motivo == "game_over_escoba"
+
+    def test_mata_aunque_el_jugador_este_escondido(self, juego, bruja):
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        _correr(juego, BUSQUEDA_SEGUNDOS_MINIMOS + 0.2)
+        assert not _sigue_jugando(juego)
+
+    def test_encontrar_la_escoba_la_hace_desaparecer(self, juego, bruja):
+        _correr(juego, FOTOGRAMA)
+        escoba = self._escoba(juego)
+        self._mirar(juego, escoba.camara)
+        juego._procesar_click(escoba.punto)
+        assert not bruja.presente
+        assert juego.busquedas.activas == []
+        # Que no vuelva a aparecer por azar mientras se mide.
+        with patch("vecindad.dominio.animatronicos.entidad.random.random", return_value=0.99):
+            _correr(juego, BUSQUEDA_SEGUNDOS_MINIMOS + 0.2)
+        assert _sigue_jugando(juego)
+        assert not juego.alerta_peligro.activa
+
+    def test_mirando_otra_camara_no_se_encuentra(self, juego, bruja):
+        _correr(juego, FOTOGRAMA)
+        escoba = self._escoba(juego)
+        otra = next(c for c in CAMARAS_CON_OBJETOS if c != escoba.camara)
+        self._mirar(juego, otra)
+        juego._procesar_click(escoba.punto)
+        assert bruja.presente
+
+    def test_con_las_camaras_rotas_no_se_ve(self, juego, bruja):
+        _correr(juego, FOTOGRAMA)
+        escoba = self._escoba(juego)
+        self._mirar(juego, escoba.camara)
+        juego.sistema_camaras._sabotaje.averiadas = True
+        juego._procesar_click(escoba.punto)
+        assert bruja.presente
+
+    def test_sin_senal_no_se_ve(self, juego, bruja):
+        _correr(juego, FOTOGRAMA)
+        escoba = self._escoba(juego)
+        self._mirar(juego, escoba.camara)
+        juego.sistema_camaras.perder_senal(escoba.camara)
+        juego._procesar_click(escoba.punto)
+        assert bruja.presente
+
+    def test_el_clic_cuenta_con_lo_que_tiembla_la_imagen(self, juego, bruja):
+        _correr(juego, FOTOGRAMA)
+        escoba = self._escoba(juego)
+        self._mirar(juego, escoba.camara)
+        juego.sistema_camaras.distorsionar()
+        dx, dy = juego.sistema_camaras.desplazamiento_vista
+        assert (dx, dy) != (0, 0)
+        juego._procesar_click((escoba.punto[0] + dx, escoba.punto[1] + dy))
+        assert not bruja.presente
+
+    def test_se_dibuja_en_su_camara(self, juego, bruja):
+        _correr(juego, FOTOGRAMA)
+        escoba = self._escoba(juego)
+        self._mirar(juego, escoba.camara)
+        juego._dibujar()
+
+    def test_jaimico_sin_cafe_se_planta_en_el_patio(self, juego, efectos):
+        empezar_noche(juego, NOCHE_CON_TODOS)
+        jaimico = _solo(juego, nombres.JAIMICO)
+        jaimico.nivel_ia = NIVEL_IA_MAXIMO
+        jaimico.habitacion_actual = "casa_jaimito"
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        _correr(juego, 7.2)
+        assert jaimico.esta_acechando()
+        assert _sigue_jugando(juego)
+
+    def test_jaimico_con_su_cafe_encontrado_desaparece(self, juego):
+        empezar_noche(juego, NOCHE_CON_TODOS)
+        jaimico = _solo(juego, nombres.JAIMICO)
+        jaimico.habitacion_actual = "casa_jaimito"
+        juego.jugador.posicion = POSICION_DENTRO_BARRIL
+        _correr(juego, FOTOGRAMA)
+        (cafe,) = juego.busquedas.activas
+        assert cafe.id_objeto == "cafe"
+        self._mirar(juego, cafe.camara)
+        juego._procesar_click(cafe.punto)
+        assert not jaimico.presente
+
+    def test_al_empezar_la_noche_no_estan_en_ninguna_camara(self, juego):
+        empezar_noche(juego, NOCHE_CON_TODOS)
+        for nombre in (nombres.CHAVO, nombres.JAIMICO, nombres.CLOTILDE):
+            animatronic = next(a for a in juego.noche.animatronics if a.nombre == nombre)
+            assert not animatronic.presente, nombre
+        assert juego.busquedas.activas == []
+
+    def test_reintentar_limpia_lo_que_quedaba_escondido(self, juego, bruja):
+        _correr(juego, FOTOGRAMA)
+        juego._reintentar()
+        assert juego.busquedas.activas == []

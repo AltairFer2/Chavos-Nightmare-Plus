@@ -34,12 +34,18 @@ from vecindad.dominio.animatronicos import (
 from vecindad.mundo.habitaciones import HABITACION_JUGADOR
 
 # El Chavo no tiene ninguna arista hacia el Primer Patio (solo llega si se le
-# mira demasiado) y Doña Clotilde depende de dónde ande Don Ramón. Los demás
-# sí pueden llegar solos tirando el dado.
+# mira demasiado), Jaimico solo llega si no se encuentra su café a tiempo y
+# Doña Clotilde nunca llega: mata desde su cámara. Los demás sí pueden llegar
+# solos tirando el dado.
 LLEGAN_SOLOS = [
-    nombres.DON_RAMON, nombres.QUICO, nombres.CHILINDRINA,
-    nombres.FLORINDA, nombres.JAIMICO,
+    nombres.DON_RAMON, nombres.QUICO, nombres.CHILINDRINA, nombres.FLORINDA,
 ]
+
+# Los que no empiezan en ninguna cámara: aparecen según su nivel.
+APARECEN = [nombres.CHAVO, nombres.JAIMICO, nombres.CLOTILDE]
+
+# Quienes pueden llegar a plantarse delante del jugador de una forma u otra.
+LLEGAN_AL_PATIO = [c for c in ELENCO if not c.busqueda_mortal]
 
 
 class TestNivelIA:
@@ -110,13 +116,32 @@ class TestRecorrido:
 
 
 class TestPasosCondicionados:
-    """Doña Clotilde no se mueve del Segundo Patio hasta que Don Ramón esté
-    donde ella necesita. Es el único cruce entre dos personajes."""
+    """Una arista que solo se abre si otro personaje está en cierta cámara.
+    Hoy no la usa nadie del elenco (era de Doña Clotilde antes de que
+    pasara a aparecer), así que se prueba con una ficha de prueba que se
+    porta como se portaba ella: no se mueve del Segundo Patio hasta que Don
+    Ramón esté donde necesita."""
 
     def _clotilde_en_el_patio(self):
-        bruja = crear(nombres.CLOTILDE, nivel_ia=NIVEL_IA_MAXIMO)
-        bruja.habitacion_actual = "segundo_patio"
-        return bruja
+        from vecindad.dominio.animatronicos.definicion import ConfiguracionAnimatronic
+
+        ficha = ConfiguracionAnimatronic(
+            nombre="Prueba",
+            habitacion_inicial="segundo_patio",
+            transiciones={
+                "segundo_patio": (HABITACION_JUGADOR, "casa_clotilde"),
+                "casa_clotilde": ("segundo_patio",),
+                HABITACION_JUGADOR: ("casa_clotilde",),
+            },
+            condiciones_de_paso={
+                ("segundo_patio", HABITACION_JUGADOR): (nombres.DON_RAMON, "entrada"),
+                ("segundo_patio", "casa_clotilde"): (nombres.DON_RAMON, "casa_clotilde"),
+            },
+            puntos_acecho={vista: (0, 0) for vista in VISTAS_DEL_PATIO},
+            espera_ataque_lenta=1.0,
+            espera_ataque_rapida=1.0,
+        )
+        return Animatronic(ficha, nivel_ia=NIVEL_IA_MAXIMO)
 
     def test_sin_don_ramon_cerca_se_queda_donde_esta(self):
         bruja = self._clotilde_en_el_patio()
@@ -162,11 +187,21 @@ class TestElAudioLaAtrae:
         florinda = self._florinda_en("casa_popis")
         assert set(florinda.camaras_vecinas()) == {"casa_godinez", "segundo_patio"}
 
-    def test_desde_el_segundo_patio_linda_con_las_dos_casas_de_arriba(self):
+    def test_desde_el_segundo_patio_linda_con_las_casas_de_arriba(self):
         florinda = self._florinda_en("segundo_patio")
         assert set(florinda.camaras_vecinas()) == {
-            "casa_popis", "casa_godinez", "entrada",
+            "casa_popis", "casa_godinez", "casa_paty", "entrada",
         }
+
+    def test_el_audio_la_lleva_a_casa_de_paty(self):
+        """Solo llega ahí llevada por el audio, y hay arte para verla."""
+        florinda = self._florinda_en("segundo_patio")
+        assert florinda.atraer_a("casa_paty")
+        assert florinda.habitacion_actual == "casa_paty"
+
+    def test_de_casa_de_paty_vuelve_sola_al_segundo_patio(self):
+        florinda = self._florinda_en("casa_paty")
+        assert florinda.destinos_posibles() == ("segundo_patio",)
 
     def test_ponerle_el_audio_detras_la_hace_retroceder(self):
         florinda = self._florinda_en("casa_popis")
@@ -182,7 +217,7 @@ class TestElAudioLaAtrae:
     def test_un_audio_lejos_no_lo_oye(self):
         florinda = self._florinda_en("segundo_patio")
         assert not florinda.atraer_a("casa_florinda")
-        assert not florinda.atraer_a("casa_paty")
+        assert not florinda.atraer_a("casa_ramon")
         assert florinda.habitacion_actual == "segundo_patio"
 
     def test_en_su_misma_camara_no_la_mueve(self):
@@ -225,10 +260,11 @@ class TestAtaque:
         assert not quico.esta_acechando()
         assert quico.segundos_para_atacar == 0.0
 
-    @pytest.mark.parametrize("config", ELENCO, ids=lambda c: c.nombre)
+    @pytest.mark.parametrize("config", LLEGAN_AL_PATIO, ids=lambda c: c.nombre)
     def test_ahuyentar_lo_deja_por_donde_su_recorrido_dice(self, config):
         """Cada uno se va por su lado: Don Ramón sale por la reja o vuelve a
-        su casa, La Chilindrina se va a la suya, Jaimico sube al patio."""
+        su casa, La Chilindrina se va a la suya; El Chavo y Jaimico
+        desaparecen (empiezan sin estar en ninguna cámara)."""
         animatronic = Animatronic(config, nivel_ia=10)
         llevar_a_acechar(animatronic)
         animatronic.ahuyentar()
@@ -369,12 +405,24 @@ class TestElenco:
         validar_elenco()  # no debe lanzar
 
     def test_todos_pueden_acabar_donde_esta_el_jugador(self):
-        for config in ELENCO:
+        for config in LLEGAN_AL_PATIO:
             assert HABITACION_JUGADOR in config.transiciones, config.nombre
+
+    def test_dona_clotilde_nunca_llega_al_patio(self):
+        """Mata desde su cámara si no se encuentra la escoba: en el patio no
+        está nunca, aunque al aparecer se oiga como si estuviera."""
+        assert HABITACION_JUGADOR not in ficha_de(nombres.CLOTILDE).habitaciones()
 
     def test_todos_empiezan_en_una_camara_de_su_recorrido(self):
         for config in ELENCO:
-            assert config.habitacion_inicial in config.transiciones, config.nombre
+            for inicio in (config.habitacion_inicial, *config.aparece_en):
+                if inicio is not None:
+                    assert inicio in config.transiciones, config.nombre
+
+    @pytest.mark.parametrize("nombre", APARECEN)
+    def test_los_que_aparecen_no_empiezan_en_ninguna_camara(self, nombre):
+        assert ficha_de(nombre).habitacion_inicial is None
+        assert ficha_de(nombre).aparece_en
 
     def test_nadie_empieza_la_noche_encima_del_jugador(self):
         for config in ELENCO:
@@ -475,7 +523,9 @@ def llegadas_por_noche(noche: int):
     Se supone un jugador que siempre reacciona: en cuanto alguien se planta
     delante, lo ahuyenta y ese personaje vuelve a empezar. Es el número de
     veces que la noche le exige reaccionar, que es lo que se siente como
-    dificultad.
+    dificultad. Doña Clotilde y Jaimico exigen reaccionar al aparecer (hay
+    que buscar su objeto), así que para ellos se cuenta cada aparición y se
+    da por encontrado el objeto.
     """
     llegadas = Counter()
     aleatorio = random.Random(SEMILLA_SIMULACION + noche)
@@ -490,6 +540,9 @@ def llegadas_por_noche(noche: int):
                     if animatronic.esta_acechando():
                         llegadas[animatronic.nombre] += 1
                         animatronic.ahuyentar()
+                    elif animatronic.configuracion.objeto_buscado and animatronic.presente:
+                        llegadas[animatronic.nombre] += 1
+                        animatronic.desaparecer()
     activos = {a.nombre for a in crear_elenco_noche(noche) if a.activo}
     return {nombre: llegadas[nombre] / NOCHES_SIMULADAS for nombre in activos}
 

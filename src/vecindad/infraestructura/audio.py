@@ -11,7 +11,7 @@ en silencio: la ausencia de assets no debe impedir jugar.
 """
 
 import random
-from typing import Optional
+from typing import Optional, Tuple
 
 # pyrefly: ignore [missing-import]
 import pygame
@@ -47,6 +47,8 @@ class GestorAudio:
         self.disponible = self._inicializar_mezclador()
         self._pista_actual = None
         self._efectos_cache = {}
+        # El efecto que suena en bucle (hoy, la alerta del patio) y su canal.
+        self._bucle: Optional[Tuple[pygame.mixer.Sound, pygame.mixer.Channel]] = None
         self._aplicar_volumen_musica()
 
     @staticmethod
@@ -186,6 +188,38 @@ class GestorAudio:
             return None
         efecto = self._obtener_efecto(nombre, subcarpeta)
         return efecto.get_length() if efecto is not None else None
+
+    def sonar_en_bucle(self, nombre: str, subcarpeta: str, intensidad: float = 1.0):
+        """Mantiene ese efecto sonando en bucle, sin reiniciarlo si ya
+        sonaba. Se llama cada fotograma: así `intensidad` (0-1, sobre el
+        volumen de efectos) y la atenuación de la pausa se aplican al
+        momento. Solo hay un bucle a la vez; pedir otro corta el anterior."""
+        if not self.disponible:
+            return
+        efecto = self._obtener_efecto(nombre, subcarpeta)
+        if efecto is None:
+            self.detener_bucle()
+            return
+        if self._bucle is None or self._bucle[0] is not efecto or not self._bucle[1].get_busy():
+            self.detener_bucle()
+            canal = efecto.play(loops=-1)
+            if canal is None:
+                return
+            self._bucle = (efecto, canal)
+        efecto.set_volume(self._proporcion(self.volumen_efectos))
+        self._bucle[1].set_volume(max(0.0, min(1.0, intensidad)))
+
+    def detener_bucle(self):
+        if self._bucle is None:
+            return
+        efecto, canal = self._bucle
+        if canal.get_sound() is efecto:
+            canal.stop()
+        self._bucle = None
+
+    @property
+    def sonando_en_bucle(self) -> bool:
+        return self._bucle is not None
 
     def reproducir_efecto_camara(self, nombre: str):
         """Sonidos del monitor de vigilancia (subcarpeta camaras/)."""

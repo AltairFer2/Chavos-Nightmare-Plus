@@ -27,6 +27,21 @@ Pasos condicionados
 en cierta cámara. Solo lo usa Doña Clotilde, que desde el Segundo Patio no se
 mueve a ningún lado mientras Don Ramón no esté donde ella necesita.
 
+Aparecer en vez de empezar en una cámara
+----------------------------------------
+Quien tiene `habitacion_inicial` en None empieza la noche sin estar en
+ninguna cámara. En cada ronda tira el mismo dado de nivel_ia y, si le toca,
+aparece en una de `aparece_en` al azar: así el nivel decide lo probable que
+es que aparezca. Lo hacen El Chavo, Jaimico y Doña Clotilde. Cuando se le
+quita de encima vuelve a no estar en ninguna, y puede volver a aparecer.
+
+Objetos que se buscan
+---------------------
+Doña Clotilde y Jaimico no caminan hacia el jugador: al aparecer esconden su
+objeto (`objeto_buscado`) en alguna cámara y corre un tiempo para
+encontrarlo (ver dominio/busqueda.py). Si se acaba, a ella le basta para
+matar (`busqueda_mortal`) y él se planta en el Primer Patio.
+
 Retrocesos y audio
 ------------------
 `retrocesos` son pasos hacia atrás que su recorrido no trae de ida (del
@@ -37,7 +52,7 @@ las cámaras desde las que el audio ya no le hace efecto.
 """
 
 from dataclasses import dataclass, field
-from typing import Mapping, Tuple
+from typing import Mapping, Optional, Tuple
 
 from ...config.rutas import DIR_ASSETS_ANIMATRONICS
 
@@ -60,7 +75,8 @@ class ConfiguracionAnimatronic:
     porque cambia en cada noche y en la Noche Personalizada."""
 
     nombre: str
-    habitacion_inicial: str  # dónde empieza la noche
+    # Dónde empieza la noche; None si no empieza en ninguna y aparece.
+    habitacion_inicial: Optional[str]
     transiciones: Mapping[str, Destinos]
     # Dónde pisa el personaje en cada sitio desde el que el jugador puede
     # mirarlo. El Barril y los Lavaderos son dos ángulos del mismo patio, así
@@ -76,6 +92,27 @@ class ConfiguracionAnimatronic:
     retrocesos: Mapping[str, Destinos] = field(default_factory=dict)
     # Cámaras desde las que el audio de Quico ya no la mueve.
     sorda_en: Tuple[str, ...] = ()
+    # Dónde puede aparecer quien empieza sin estar en ninguna cámara, y qué
+    # parte del dado de nivel cuenta para aparecer (1.0, el dado tal cual).
+    # Bajarlo espacia las apariciones sin dejar de depender del nivel.
+    aparece_en: Tuple[str, ...] = ()
+    probabilidad_aparicion: float = 1.0
+    # El objeto que hay que encontrar en las cámaras cuando aparece ("" si
+    # no tiene) y cuánto hay para encontrarlo: con busqueda_segundos, de
+    # nivel 1 a nivel 20; con busqueda_por_distancia, según lo lejos del
+    # Primer Patio que aparezca (config/jugabilidad.py).
+    objeto_buscado: str = ""
+    busqueda_segundos: Tuple[float, float] = (0.0, 0.0)
+    busqueda_por_distancia: bool = False
+    # Si se acaba el tiempo de la búsqueda, mata en el acto (Doña Clotilde);
+    # si no, se planta en el Primer Patio (Jaimico).
+    busqueda_mortal: bool = False
+    # El punto débil más difícil de todos, sea cual sea su nivel (Jaimico).
+    punto_debil_mas_dificil: bool = False
+    # Cuánto de su nivel cuenta para su punto débil. La Chilindrina tiene
+    # nivel alto para que su recorrido largo le dé tiempo de llegar, y con
+    # ese nivel su punto sería casi imposible de seguir: se le rebaja.
+    punto_debil_escala: float = 1.0
     # Arte: assets/animatronics/<carpeta>/<prefijo> <n>.png. La carpeta y el
     # prefijo no siempre coinciden (bruja/clotilde, don ramon/ramon).
     carpeta_sprite: str = ""
@@ -102,7 +139,10 @@ class ConfiguracionAnimatronic:
 
     def habitaciones(self) -> Tuple[str, ...]:
         """Todas las cámaras por las que puede pasar, en orden estable."""
-        vistas = [self.habitacion_inicial]
+        vistas = [] if self.habitacion_inicial is None else [self.habitacion_inicial]
+        for id_habitacion in self.aparece_en:
+            if id_habitacion not in vistas:
+                vistas.append(id_habitacion)
         for origen, destinos in self.transiciones.items():
             for id_habitacion in (origen, *destinos):
                 if id_habitacion not in vistas:

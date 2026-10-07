@@ -64,6 +64,7 @@ TEXTOS = {
     "game_over_titulo": "YOU WERE CAUGHT",
     "game_over_motivo": "{nombre} reached you.",
     "game_over_luz": "You shone the light on {nombre}.",
+    "game_over_escoba": "You didn't find {nombre}'s broom in time.",
     "game_over_barriga": "You called Señor Barriga for nothing and he came to collect.",
     "victoria_titulo": "YOU SURVIVED THE NIGHT!",
     "victoria_personalizada": "YOU SURVIVED THE CUSTOM NIGHT!",

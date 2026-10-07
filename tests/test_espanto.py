@@ -27,9 +27,9 @@ from vecindad.mundo.posiciones import POSICION_BARRIL, POSICION_LAVADEROS
 
 FOTOGRAMA = 1.0 / 60.0
 
+# Doña Clotilde ya no: nunca llega al patio (se le busca la escoba).
 SE_ESPANTAN = (
-    nombres.QUICO, nombres.CHILINDRINA, nombres.CHAVO,
-    nombres.JAIMICO, nombres.CLOTILDE,
+    nombres.QUICO, nombres.CHILINDRINA, nombres.CHAVO, nombres.JAIMICO,
 )
 
 # El nivel más alto que alcanza alguien en las seis noches de la campaña.
@@ -69,7 +69,7 @@ def _desplazamiento(espanto, animatronic, vista=POSICION_BARRIL):
 
 
 class TestQuienSeEspanta:
-    def test_todos_menos_don_ramon_y_dona_florinda(self):
+    def test_todos_menos_don_ramon_dona_florinda_y_la_bruja(self):
         assert {c.nombre for c in ELENCO if c.se_espanta_con_luz} == set(SE_ESPANTAN)
 
     def test_a_quien_mata_la_luz_no_se_le_espanta(self):

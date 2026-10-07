@@ -9,7 +9,8 @@ Cómo se arma la pantalla, de atrás hacia adelante:
 
 1. La imagen de la habitación: si hay alguien dentro, la escena ya dibujada
    con esa gente (ver escenas_camara.py); si no, "cam N.png", que es la
-   habitación vacía.
+   habitación vacía. Encima, si en esa cámara quedó escondida la escoba de
+   Doña Clotilde o el café de Jaimico, el objeto (ver objetos_buscados.py).
 2. Líneas de barrido y ruido de señal, para que parezca un monitor viejo.
 3. Al cambiar de cámara, una ráfaga de estática que tapa el corte.
 4. "Marco Cam N.png": el marco del monitor. Ya trae dibujado el rótulo de la
@@ -33,6 +34,7 @@ sola a los pocos segundos.
 Con El Chavo en la cámara que se mira, además, el monitor se vuelve
 errático (monitor_erratico.py): la imagen tiembla y el mapa se va a saltos
 con sus botones, para que escapar de su cámara antes de que la rompa cueste.
+Lo errático que se pone depende de su nivel de IA: con nivel 20 es lo más.
 """
 
 from typing import Optional
@@ -48,10 +50,12 @@ from ..config.interfaz import (
     CAMARA_AUDIO_ONDAS,
     CAMARA_DISTORSION_DESPLAZAMIENTO,
     CAMARA_DISTORSION_SEGUNDOS,
+    CAMARA_ERRATICO_AMPLITUD_POR_IA,
     CAMARA_ERRATICO_INTENSIDAD_MINIMA,
     CAMARA_ERRATICO_MAPA_AMPLITUD,
     CAMARA_ERRATICO_MAPA_CAMBIO_SEGUNDOS,
     CAMARA_ERRATICO_MAPA_PERSECUCION,
+    CAMARA_ERRATICO_RITMO_POR_IA,
     CAMARA_ERRATICO_VISTA_AMPLITUD,
     CAMARA_ERRATICO_VISTA_CAMBIO_SEGUNDOS,
     CAMARA_ERRATICO_VISTA_PERSECUCION,
@@ -79,6 +83,7 @@ from .efectos import crear_lineas_barrido, generar_frames_estatica
 from .escenas_camara import EscenasCamara
 from .mapa_camaras import MapaVecindad
 from .monitor_erratico import DesplazamientoErratico
+from .objetos_buscados import ImagenesObjetosBuscados
 
 
 class SistemaCamaras:
@@ -94,6 +99,7 @@ class SistemaCamaras:
         self._escenas = EscenasCamara()
         self._mapa = MapaVecindad()
         self._boton_audio = BotonAudio()
+        self._objetos = ImagenesObjetosBuscados()
 
         self._frames_estatica = generar_frames_estatica(
             CAMARA_ESTATICA_FRAMES,
@@ -159,6 +165,25 @@ class SistemaCamaras:
             self.animacion.entrar()
         else:
             self.animacion.salir()
+
+    @property
+    def se_ve_la_camara(self) -> bool:
+        """Si de verdad hay imagen de la cámara actual en pantalla: monitor
+        levantado, circuito en pie, con señal y con lente. Es lo que hace
+        falta para poder encontrar algo en ella."""
+        return (
+            self.a_la_vista
+            and not self.averiadas
+            and not self.sin_senal(self.camara_actual)
+            and not obtener_habitacion(self.camara_actual).solo_audio
+        )
+
+    @property
+    def desplazamiento_vista(self):
+        """Cuánto está corrida ahora la imagen de la cámara: lo que tiembla
+        con El Chavo o con el tirón de Doña Florinda. Lo que hay dentro de
+        ella (los objetos) se corre igual, también para los clics."""
+        return self._desplazamiento_de_la_vista()
 
     @property
     def a_la_vista(self) -> bool:
@@ -256,11 +281,12 @@ class SistemaCamaras:
         # Solo cuenta lo que de verdad se ve: mientras el monitor sube no hay
         # cámara en pantalla, y con un aguante de un segundo esa animación se
         # comería el margen para reaccionar.
-        observado = self.a_la_vista and self._saboteador_a_la_vista(animatronics)
-        self._sabotaje.actualizar(dt, observado)
-        intensidad = self._intensidad_erratica(observado)
-        self._erratico_mapa.actualizar(dt, intensidad)
-        self._erratico_vista.actualizar(dt, intensidad)
+        saboteador = self._saboteador_a_la_vista(animatronics) if self.a_la_vista else None
+        self._sabotaje.actualizar(dt, saboteador is not None)
+        intensidad = self._intensidad_erratica(saboteador)
+        ritmo = saboteador.segun_ia(CAMARA_ERRATICO_RITMO_POR_IA) if saboteador else 1.0
+        self._erratico_mapa.actualizar(dt, intensidad, ritmo)
+        self._erratico_vista.actualizar(dt, intensidad, ritmo)
         self._mapa.desplazamiento = self._desplazamiento_del_mapa()
 
     def _desplazamiento_del_mapa(self):
@@ -273,12 +299,14 @@ class SistemaCamaras:
         ancho, alto = CAMARA_ERRATICO_MAPA_AMPLITUD
         return (dx - round(ancho * intensidad), dy - round(alto * intensidad))
 
-    def _intensidad_erratica(self, observado: bool) -> float:
+    def _intensidad_erratica(self, saboteador) -> float:
         """Nada más verlo el monitor ya se descontrola, y va a peor conforme
-        se acerca a romperlo. Rotas ya no hay cámara que mover."""
-        if not observado or self.averiadas:
+        se acerca a romperlo; cuánto, según su nivel (con 20, lo más). Rotas
+        ya no hay cámara que mover."""
+        if saboteador is None or self.averiadas:
             return 0.0
-        return max(CAMARA_ERRATICO_INTENSIDAD_MINIMA, self._sabotaje.proporcion)
+        presion = max(CAMARA_ERRATICO_INTENSIDAD_MINIMA, self._sabotaje.proporcion)
+        return presion * saboteador.segun_ia(CAMARA_ERRATICO_AMPLITUD_POR_IA)
 
     @property
     def erratico(self) -> bool:
@@ -289,22 +317,28 @@ class SistemaCamaras:
     def desplazamiento_mapa(self):
         return self._mapa.desplazamiento
 
-    def _saboteador_a_la_vista(self, animatronics) -> bool:
-        return any(
-            animatronic.nombre == nombres.SABOTEADOR
-            and animatronic.activo
-            and animatronic.habitacion_actual == self.camara_actual
-            for animatronic in animatronics
-        )
+    def _saboteador_a_la_vista(self, animatronics):
+        """El Chavo, si está en la cámara que se mira; si no, None."""
+        for animatronic in animatronics:
+            if (
+                animatronic.nombre == nombres.SABOTEADOR
+                and animatronic.activo
+                and animatronic.habitacion_actual == self.camara_actual
+            ):
+                return animatronic
+        return None
 
     # ------------------------------------------------------------------
     # Dibujado
     # ------------------------------------------------------------------
     def dibujar(self, superficie: pygame.Surface, animatronics=(), fuente=None,
-                idiomas=None, posicion_raton=None, estado_servicios=None):
+                idiomas=None, posicion_raton=None, estado_servicios=None,
+                objetos=()):
+        """`objetos` son los pares (id del objeto, centro) escondidos en la
+        cámara que se está mirando."""
         habitacion = obtener_habitacion(self.camara_actual)
 
-        self._dibujar_vista(superficie, habitacion, animatronics, fuente, idiomas)
+        self._dibujar_vista(superficie, habitacion, animatronics, fuente, idiomas, objetos)
 
         if self.suena_audio_en(habitacion.id) and not self.averiadas:
             self._dibujar_ondas(superficie)
@@ -355,7 +389,8 @@ class SistemaCamaras:
         fuerte entra y sale, un cuadro sí y otro no."""
         return self._sabotaje.a_punto and self._indice_estatica % 2 == 0
 
-    def _dibujar_vista(self, superficie, habitacion, animatronics, fuente, idiomas):
+    def _dibujar_vista(self, superficie, habitacion, animatronics, fuente, idiomas,
+                       objetos=()):
         superficie.fill(COLOR_NEGRO)
         if self.averiadas:
             # Sin señal en ninguna cámara hasta restablecerlas desde el barril.
@@ -379,7 +414,9 @@ class SistemaCamaras:
             # Con El Chavo en pantalla la imagen tiembla a tirones; lo que
             # queda al descubierto por los bordes se ve negro, como un tubo
             # que pierde el enganche.
-            superficie.blit(imagen, self._desplazamiento_de_la_vista())
+            desplazamiento = self._desplazamiento_de_la_vista()
+            superficie.blit(imagen, desplazamiento)
+            self._objetos.dibujar(superficie, objetos, desplazamiento)
         else:
             self._escribir_al_centro(superficie, fuente, idiomas, "camara_sin_imagen")
 

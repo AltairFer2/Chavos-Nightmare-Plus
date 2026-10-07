@@ -64,6 +64,7 @@ TEXTOS = {
     "game_over_titulo": "VOCÊ FOI PEGO",
     "game_over_motivo": "{nombre} chegou até você.",
     "game_over_luz": "Você iluminou {nombre}.",
+    "game_over_escoba": "Você não achou a vassoura de {nombre} a tempo.",
     "game_over_barriga": "Você chamou o Senhor Barriga à toa e ele veio cobrar.",
     "victoria_titulo": "VOCÊ SOBREVIVEU À NOITE!",
     "victoria_personalizada": "VOCÊ SOBREVIVEU À NOITE PERSONALIZADA!",

@@ -14,6 +14,8 @@ import sys
 import pygame
 
 from ..config.audio import (
+    ALERTA_PATIO_VOLUMEN,
+    EFECTO_ALERTA_PATIO,
     EFECTO_CAMBIO_CAMARA,
     EFECTO_EASTER_EGG,
     EFECTO_ENCENDIDO_CAMARAS,
@@ -30,6 +32,7 @@ from ..config.audio import (
     EFECTOS_LLAMADA_FLORINDA,
     EFECTOS_SALIDA_RAMON,
     PROPORCION_VOLUMEN_EN_PAUSA,
+    SUBCARPETA_AMBIENTE,
 )
 from ..config.interfaz import COLOR_NEGRO, TIRAS_BLOQUEO_SEGUNDOS
 from ..config.ventana import ALTO_PANTALLA, ANCHO_PANTALLA, FPS
@@ -39,11 +42,13 @@ from ..dominio.animatronicos import (
     acechando_en,
     detectar_luz_mortal,
     iluminados_en,
+    inminencia_en_el_patio,
     nombres,
 )
 from ..dominio.jugador import Jugador
 from ..dominio.linterna import Linterna, baterias_iniciales, esta_iluminado
 from ..dominio.aparicion_rara import AparicionesRaras
+from ..dominio.busqueda import BusquedasEnCamaras, Desenlace
 from ..dominio.objetos import ID_BATERIA, ObjetosEnElSuelo, obtener_objeto
 from ..dominio.servicios import Resultado, Servicio, ServiciosUtilidad
 from ..dominio.temporizador import TemporizadorNoche
@@ -56,6 +61,7 @@ from ..infraestructura.guardado import (
 )
 from ..infraestructura.audio import GestorAudio
 from ..infraestructura.pantalla import GestorPantalla
+from ..presentacion.alerta_peligro import AlertaPeligro
 from ..presentacion.aparicion_rara import ImagenesRaras
 from ..presentacion.camaras import SistemaCamaras
 from ..presentacion.hud import (
@@ -83,7 +89,7 @@ from ..presentacion.vista import VistaJugador
 from .aviso import AvisoTemporal
 from .entrada import Accion, accion_de
 from .estados import EstadoJuego, GestorEstados
-from .noche import MOTIVO_ATRAPADO, Noche
+from .noche import MOTIVO_ATRAPADO, MOTIVO_ESCOBA, Noche
 
 # Pista de música asociada a cada estado. El gestor de audio la resuelve
 # dentro de la carpeta con o sin copyright según el modo streamer.
@@ -165,6 +171,8 @@ class Juego:
         self.objetos_en_suelo = ObjetosEnElSuelo(1)
         self.imagenes_raras = ImagenesRaras()
         self.apariciones = AparicionesRaras(1, self.imagenes_raras.cantidad)
+        self.alerta_peligro = AlertaPeligro()
+        self.busquedas = BusquedasEnCamaras()
         self.susto = Susto()
         self.reloj_victoria = RelojVictoria(self.idiomas)
         self.menu_victoria = MenuVictoria(self.idiomas)
@@ -210,6 +218,8 @@ class Juego:
         self.servicios.reiniciar(self.noche.numero)
         self.objetos_en_suelo = ObjetosEnElSuelo(self.noche.numero)
         self.apariciones = AparicionesRaras(self.noche.numero, self.imagenes_raras.cantidad)
+        self.alerta_peligro.reiniciar()
+        self.busquedas.reiniciar()
         self.sistema_camaras.reiniciar(CAMARA_INICIAL, self.noche.numero)
         self.panel_servicios.activo = False
         self.aviso.limpiar()
@@ -280,6 +290,7 @@ class Juego:
             self._procesar_eventos()
             self._actualizar(dt)
             self._actualizar_musica()
+            self._sonar_alerta_del_patio()
             self._dibujar()
             self.gestor_pantalla.presentar()
         pygame.quit()
@@ -477,6 +488,8 @@ class Juego:
         self._tiras_bloqueadas = TIRAS_BLOQUEO_SEGUNDOS
 
     def _seleccionar_camara(self, posicion):
+        if self._encontrar_objeto(posicion):
+            return
         if self.sistema_camaras.audio_en(posicion):
             self._sonar_audio_de_quico()
             return
@@ -485,6 +498,20 @@ class Juego:
             return
         if self.sistema_camaras.cambiar_camara(id_habitacion):
             self.audio.reproducir_efecto_camara(EFECTO_CAMBIO_CAMARA)
+
+    def _encontrar_objeto(self, posicion) -> bool:
+        """Clic sobre la escoba o el café escondidos en la cámara que se
+        mira: su dueño desaparece. Solo si de verdad se ve la imagen (sin
+        sabotaje ni corte de señal), y contando con lo que esté temblando."""
+        if not self.sistema_camaras.se_ve_la_camara:
+            return False
+        dx, dy = self.sistema_camaras.desplazamiento_vista
+        busqueda = self.busquedas.objeto_en(
+            self.sistema_camaras.camara_actual, (posicion[0] - dx, posicion[1] - dy)
+        )
+        if busqueda is None:
+            return False
+        return self.busquedas.encontrar(busqueda, self.noche.animatronics)
 
     def _sonar_audio_de_quico(self):
         """Botón de audio del monitor: suena en la cámara que se está
@@ -644,6 +671,8 @@ class Juego:
         acechaban = self._nombres_acechando()
         vigilados = self._quienes_se_ven()
         self.temporizador.actualizar(dt, self._elenco_en_movimiento())
+        if self._atender_busquedas(dt):
+            return
         self._sonar_pasos_de_los_que_llegan(acechaban)
         self._cortar_la_senal_si_cambio_quien_se_ve(vigilados)
         self._distorsionar_si_se_movio_florinda()
@@ -656,6 +685,7 @@ class Juego:
         self._activar_a_los_alumbrados()
         if self._fue_atacado(dt):
             return
+        self.alerta_peligro.actualizar(dt, self._inminencia_del_peligro())
 
         if self.temporizador.noche_terminada:
             self._ganar_la_noche()
@@ -720,6 +750,34 @@ class Juego:
         for animatronic in self.noche.animatronics:
             if animatronic.esta_acechando() and animatronic.nombre not in acechaban:
                 self.audio.reproducir_efecto(self._pasos_de(animatronic))
+
+    def _atender_busquedas(self, dt: float) -> bool:
+        """Los objetos escondidos de Doña Clotilde y Jaimico (ver
+        dominio/busqueda.py). Al aparecer suenan los pasos como si alguien
+        llegara al patio, aunque no haya nadie. Devuelve True si se acabó el
+        tiempo de Doña Clotilde, que termina la noche."""
+        resultado = self.busquedas.actualizar(dt, self.noche.animatronics)
+        for animatronic in resultado.empezadas:
+            self.audio.reproducir_efecto(self._pasos_de(animatronic))
+        for animatronic, desenlace in resultado.agotadas:
+            if desenlace is Desenlace.MATA:
+                self._perder(animatronic.nombre, MOTIVO_ESCOBA)
+                return True
+            animatronic.irrumpir()
+        return False
+
+    def _inminencia_del_peligro(self):
+        """Lo cerca que está el peligro más apurado, de 0 a 1, o None si no
+        hay ninguno: alguien de verdad en el patio o un objeto escondido
+        corriendo. La alerta no distingue entre los dos a propósito."""
+        candidatas = [
+            valor for valor in (
+                inminencia_en_el_patio(self.noche.animatronics),
+                self.busquedas.inminencia(),
+            )
+            if valor is not None
+        ]
+        return max(candidatas) if candidatas else None
 
     def _quienes_se_ven(self):
         """La cámara que el jugador tiene delante y los nombres de quienes
@@ -887,6 +945,21 @@ class Juego:
         if pista:
             self.audio.reproducir_musica(pista)
 
+    def _sonar_alerta_del_patio(self):
+        """El aviso de que hay alguien en el Primer Patio: suena en bucle
+        mientras alguien acecha, se esté donde se esté, y sube de volumen
+        conforme se acerca el ataque. En pausa sigue sonando, atenuado como
+        todo lo demás; fuera de la noche se calla."""
+        en_la_noche = self.gestor_estados.jugando() or self.gestor_estados.en_pausa()
+        inminencia = self._inminencia_del_peligro() if en_la_noche else None
+        if inminencia is None:
+            self.audio.detener_bucle()
+            return
+        bajo, alto = ALERTA_PATIO_VOLUMEN
+        self.audio.sonar_en_bucle(
+            EFECTO_ALERTA_PATIO, SUBCARPETA_AMBIENTE, bajo + (alto - bajo) * inminencia
+        )
+
     # ------------------------------------------------------------------
     # Dibujado
     # ------------------------------------------------------------------
@@ -929,6 +1002,10 @@ class Juego:
                 idiomas=self.idiomas,
                 posicion_raton=self.punto_luz,
                 estado_servicios=self.servicios.estado(),
+                objetos=[
+                    (busqueda.id_objeto, busqueda.punto)
+                    for busqueda in self.busquedas.en_camara(self.sistema_camaras.camara_actual)
+                ],
             )
         else:
             self.vista.dibujar(
@@ -946,6 +1023,9 @@ class Juego:
             # patio se sigue viendo alrededor mientras se mueve.
             self.sistema_camaras.animacion.dibujar(self.pantalla)
 
+        # Con alguien en el patio todo va y viene entre color y gris y
+        # tiembla, también en el monitor; el HUD no, para poder leerlo.
+        self.alerta_peligro.dibujar(self.pantalla)
         if self.apariciones.visible:
             # Encima de la escena y debajo del HUD: se ve, pero no tapa nada
             # de lo que hace falta leer.

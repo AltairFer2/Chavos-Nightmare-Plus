@@ -11,6 +11,7 @@ from vecindad.dominio.animatronicos import (
     acechando_en,
     detectar_luz_mortal,
     iluminados_en,
+    inminencia_en_el_patio,
     nombres,
 )
 from vecindad.mundo.posiciones import POSICION_BARRIL, POSICION_LAVADEROS
@@ -118,3 +119,41 @@ class TestLuzMortal:
 
     def test_sin_punto_de_luz_no_muere_nadie(self, ramon_acechando):
         assert detectar_luz_mortal([ramon_acechando], POSICION_BARRIL, None) is None
+
+
+class TestInminencia:
+    """Lo cerca que está el ataque: es lo que mide la alerta de peligro."""
+
+    def test_fuera_del_patio_es_cero(self):
+        assert crear(nombres.QUICO, nivel_ia=10).inminencia() == 0.0
+
+    def test_al_llegar_es_cero(self, quico_acechando):
+        assert quico_acechando.inminencia() == pytest.approx(0.0)
+
+    def test_crece_conforme_corre_su_espera(self, quico_acechando):
+        espera = quico_acechando.espera_de_ataque()
+        quico_acechando.descontar_espera(espera / 2)
+        assert quico_acechando.inminencia() == pytest.approx(0.5)
+
+    def test_al_atacar_es_uno(self, quico_acechando):
+        quico_acechando.descontar_espera(quico_acechando.espera_de_ataque() + 1.0)
+        assert quico_acechando.inminencia() == 1.0
+
+    def test_escondido_a_salvo_no_avanza(self, quico_acechando):
+        """Dentro del barril la espera de Quico no corre, y la alerta se
+        queda donde estaba."""
+        quico_acechando.descontar_espera(5.0, jugador_escondido=True)
+        assert quico_acechando.inminencia() == pytest.approx(0.0)
+
+
+class TestInminenciaEnElPatio:
+    def test_con_el_patio_vacio_no_hay(self):
+        assert inminencia_en_el_patio([crear(nombres.QUICO, nivel_ia=10)]) is None
+
+    def test_manda_el_ataque_mas_proximo(self, quico_acechando, ramon_acechando):
+        quico_acechando.descontar_espera(quico_acechando.espera_de_ataque() * 0.8)
+        assert inminencia_en_el_patio([ramon_acechando, quico_acechando]) == pytest.approx(0.8)
+
+    def test_los_inactivos_no_cuentan(self, quico_acechando):
+        quico_acechando.activo = False
+        assert inminencia_en_el_patio([quico_acechando]) is None

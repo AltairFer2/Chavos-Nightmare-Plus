@@ -97,6 +97,7 @@ dominio/
 ├── objetos.py            las baterías del suelo (una a la vez, en su sitio fijo)
 ├── servicios.py          los cuatro servicios del barril
 ├── sabotaje.py           El Chavo arruinando las cámaras
+├── busqueda.py           la escoba y el café escondidos en las cámaras
 ├── interferencia.py      cámaras sin señal al moverse alguien delante
 ├── aparicion_rara.py     cuándo se cuela un easter egg
 └── temporizador.py       el reloj y los ticks que mueven al elenco
@@ -156,6 +157,8 @@ presentacion/
 ├── animacion_monitor.py  el monitor entrando y saliendo de la vista
 ├── mapa_camaras.py       el mapa que hace de selector de cámara
 ├── monitor_erratico.py   el temblor y los saltos del monitor con El Chavo en pantalla
+├── objetos_buscados.py   cómo se ven la escoba y el café en el monitor
+├── alerta_peligro.py     la imagen en gris y temblando con alguien en el patio
 ├── vista.py              lo que el jugador ve, con la linterna
 ├── hud.py                noche, hora, batería, finales
 ├── panel_servicios.py    el tablero del barril

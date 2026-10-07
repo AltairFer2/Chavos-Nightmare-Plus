@@ -73,6 +73,14 @@ EFECTO_SORPRESA = "sorprendido"
 EFECTO_PASOS_IZQUIERDA = "cambio left"
 EFECTO_PASOS_DERECHA = "cambio right"
 
+# Alerta de que hay alguien en el Primer Patio (subcarpeta ambiente/). Suena
+# en bucle mientras alguien acecha, se oiga desde donde se oiga (asomado, en
+# el barril o mirando las cámaras), y se calla en cuanto el patio se vacía.
+# Su volumen sube con lo cerca que está el ataque más próximo: de
+# ALERTA_PATIO_VOLUMEN[0] al llegar a ALERTA_PATIO_VOLUMEN[1] al atacar.
+EFECTO_ALERTA_PATIO = "mono cerca"
+ALERTA_PATIO_VOLUMEN = (0.45, 1.0)
+
 # Grabaciones de Quico con las que se llama a Doña Florinda (subcarpeta
 # efectos/). Suena una al azar cada vez, para que usar el audio varias veces
 # en una noche no se oiga siempre igual. Las que no existan en el árbol

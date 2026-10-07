@@ -200,18 +200,37 @@ class TestArteQueNoHaceFalta:
             assert habitaciones_que_se_dibujan()[id_habitacion] == quienes
 
     def test_los_demas_siguen_necesitando_su_imagen_en_el_patio(self):
+        """Todos menos Doña Florinda (llegada mortal) y Doña Clotilde, que
+        nunca llega al patio: mata desde su cámara."""
         dibujables = habitaciones_que_se_dibujan()["primer_patio"]
-        assert len(dibujables) == len(ELENCO) - 1
+        assert set(dibujables) == {
+            c.nombre for c in ELENCO
+            if c.nombre not in (nombres.FLORINDA, nombres.CLOTILDE)
+        }
 
 
 class TestHabitacionesPosibles:
     def test_solo_lista_habitaciones_que_existen(self):
         assert set(habitaciones_posibles()).issubset(set(HABITACIONES))
 
-    def test_todos_pueden_llegar_al_patio_del_jugador(self):
-        assert len(habitaciones_posibles()["primer_patio"]) == len(ELENCO)
+    def test_todos_menos_la_bruja_pueden_llegar_al_patio_del_jugador(self):
+        en_el_patio = set(habitaciones_posibles()["primer_patio"])
+        assert en_el_patio == {c.nombre for c in ELENCO if c.nombre != nombres.CLOTILDE}
 
     def test_cada_personaje_aparece_en_su_casa_de_origen(self):
         posibles = habitaciones_posibles()
         for config in ELENCO:
-            assert config.nombre in posibles[config.habitacion_inicial]
+            for inicio in (config.habitacion_inicial, *config.aparece_en):
+                if inicio is not None:
+                    assert config.nombre in posibles[inicio]
+
+    def test_la_bruja_puede_aparecer_en_cualquier_camara_menos_el_patio(self):
+        posibles = habitaciones_posibles()
+        for id_habitacion in HABITACIONES:
+            dentro = nombres.CLOTILDE in posibles.get(id_habitacion, [])
+            assert dentro == (id_habitacion != "primer_patio"), id_habitacion
+
+    def test_jaimico_solo_aparece_en_su_casa_y_en_el_patio(self):
+        posibles = habitaciones_posibles()
+        donde = {h for h, quienes in posibles.items() if nombres.JAIMICO in quienes}
+        assert donde == {"casa_jaimito", "primer_patio"}

@@ -54,14 +54,16 @@ class DesplazamientoErratico:
             round(y * self._amplitud[1] * self.intensidad),
         )
 
-    def actualizar(self, dt: float, intensidad: float):
-        """`intensidad` va de 0 (quieto) a 1 (lo más errático)."""
+    def actualizar(self, dt: float, intensidad: float, ritmo: float = 1.0):
+        """`intensidad` va de 0 (quieto) a 1 (lo más errático) y escala lo
+        lejos que salta; `ritmo` escala lo seguido que cambia de destino (1
+        es el ritmo de cambio_segundos; 0.5, la mitad de saltos)."""
         self.intensidad = max(0.0, min(1.0, intensidad))
         if self.intensidad == 0.0:
             self._actual = (0.0, 0.0)
             self._para_cambiar = 0.0
             return
-        self._para_cambiar -= dt
+        self._para_cambiar -= dt * ritmo
         if self._para_cambiar <= 0.0:
             self._destino = (self._azar.uniform(-1.0, 1.0), self._azar.uniform(-1.0, 1.0))
             self._para_cambiar = self._azar.uniform(*self._cambio)

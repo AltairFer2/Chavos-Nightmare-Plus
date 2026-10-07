@@ -10,6 +10,9 @@ el resultado es menor o igual a su nivel_ia. Nivel 0 = nunca se mueve; nivel
 A dónde se mueve lo decide su grafo de transiciones (ver definicion.py): de
 la cámara donde está, uno de sus destinos al azar. Una vez en el Primer Patio
 deja de tirar el dado: de ahí solo lo saca su contramedida.
+
+Quien no está en ninguna cámara (habitacion_actual en None) usa el mismo
+dado para aparecer en una de las suyas.
 """
 
 import random
@@ -20,6 +23,7 @@ from ...config.jugabilidad import (
     LUZ_RADIO_PELIGRO_MAXIMO,
     LUZ_RADIO_PELIGRO_MINIMO,
     PUNTO_DEBIL_CAMBIO_SEGUNDOS,
+    PUNTO_DEBIL_FACTOR_MAS_DIFICIL,
     PUNTO_DEBIL_RADIO,
     PUNTO_DEBIL_SEGUNDOS,
     PUNTO_DEBIL_VELOCIDAD,
@@ -41,7 +45,8 @@ class Animatronic:
         self.nombre = configuracion.nombre
         self.nivel_ia = limitar_nivel_ia(nivel_ia)
         self.activo = self.nivel_ia > NIVEL_IA_MINIMO
-        self.habitacion_actual = configuracion.habitacion_inicial
+        # None mientras no esté en ninguna cámara (los que aparecen).
+        self.habitacion_actual: Optional[str] = configuracion.habitacion_inicial
         self.segundos_para_atacar = 0.0
         # Cuál de sus diseños se le ve mientras acecha. Se sortea al llegar.
         self.pose = 1
@@ -82,8 +87,21 @@ class Animatronic:
             return False
         return random.randint(1, NIVEL_IA_MAXIMO) <= self.nivel_ia
 
+    def intentar_aparecer(self) -> bool:
+        """El dado de la IA, rebajado por su probabilidad_aparicion: a más
+        nivel, más probable que aparezca en esta ronda."""
+        if not self.intentar_mover():
+            return False
+        probabilidad = self.configuracion.probabilidad_aparicion
+        return probabilidad >= 1.0 or random.random() < probabilidad
+
     def actualizar(self, elenco: Sequence["Animatronic"] = ()):
-        """Ronda de IA: si el dado lo permite, cambia de cámara."""
+        """Ronda de IA: si el dado lo permite, cambia de cámara, o aparece
+        si no estaba en ninguna."""
+        if not self.presente:
+            if self.configuracion.aparece_en and self.intentar_aparecer():
+                self.aparecer()
+            return
         if self.esta_acechando():
             return
         destinos = self.destinos_posibles(elenco)
@@ -99,6 +117,25 @@ class Animatronic:
             return
         self.pose = random.randint(1, POSES_POR_PERSONAJE)
         self.segundos_para_atacar = self.espera_de_ataque()
+
+    @property
+    def presente(self) -> bool:
+        """Si está en alguna cámara. Los que aparecen empiezan sin estarlo y
+        vuelven a no estarlo cuando se les quita de encima."""
+        return self.habitacion_actual is not None
+
+    def aparecer(self):
+        """Se presenta en una de sus cámaras de aparición, al azar."""
+        self.habitacion_actual = random.choice(self.configuracion.aparece_en)
+        self.segundos_para_atacar = 0.0
+        self.activado = False
+
+    def desaparecer(self):
+        """Deja de estar en ninguna cámara: encontraron su objeto. Si es de
+        los que aparecen, la ronda siguiente puede volver a intentarlo."""
+        self.habitacion_actual = None
+        self.segundos_para_atacar = 0.0
+        self.activado = False
 
     def irrumpir(self):
         """Lo planta encima del jugador sin pasar por su recorrido.
@@ -144,10 +181,23 @@ class Animatronic:
         self.segundos_para_atacar -= dt
         return self.segundos_para_atacar <= 0.0
 
+    def inminencia(self) -> float:
+        """Qué tan cerca está de atacar: 0.0 al plantarse en el patio y 1.0
+        en el instante del ataque. Fuera del patio, 0.0. Mientras su espera
+        no corre (el jugador a salvo en el barril) se queda donde estaba."""
+        if not self.activo or not self.esta_acechando():
+            return 0.0
+        espera = self.espera_de_ataque()
+        if espera <= 0.0:
+            return 1.0
+        return max(0.0, min(1.0, 1.0 - self.segundos_para_atacar / espera))
+
     def ahuyentar(self):
         """Lo saca de encima del jugador. Es lo que hacen espantarlo con la
         luz y los servicios del barril: no se elimina del elenco, se va por
-        donde su recorrido diga y vuelve a acercarse desde ahí."""
+        donde su recorrido diga y vuelve a acercarse desde ahí. Si su
+        recorrido no tiene salida, vuelve a donde empezó la noche, que para
+        los que aparecen es no estar en ninguna cámara."""
         salidas = self.configuracion.transiciones.get(HABITACION_JUGADOR, ())
         self.habitacion_actual = (
             random.choice(salidas) if salidas else self.configuracion.habitacion_inicial
@@ -217,24 +267,39 @@ class Animatronic:
     # más rápido, más nervioso y más rato hay que sostenerlo.
     # ------------------------------------------------------------------
     def radio_punto_debil(self) -> float:
-        return self._segun_ia(PUNTO_DEBIL_RADIO)
+        return self._segun_punto_debil(PUNTO_DEBIL_RADIO)
 
     def segundos_para_espantar(self) -> float:
-        return self._segun_ia(PUNTO_DEBIL_SEGUNDOS)
+        return self._segun_punto_debil(PUNTO_DEBIL_SEGUNDOS)
 
     def velocidad_punto_debil(self) -> float:
-        return self._segun_ia(PUNTO_DEBIL_VELOCIDAD)
+        return self._segun_punto_debil(PUNTO_DEBIL_VELOCIDAD)
 
     def cambio_punto_debil(self) -> Tuple[float, float]:
         """Cada cuánto (mínimo, máximo) su punto débil cambia de destino."""
         lento, rapido = PUNTO_DEBIL_CAMBIO_SEGUNDOS
         return (
-            self._segun_ia((lento[0], rapido[0])),
-            self._segun_ia((lento[1], rapido[1])),
+            self._segun_punto_debil((lento[0], rapido[0])),
+            self._segun_punto_debil((lento[1], rapido[1])),
         )
 
-    def _segun_ia(self, extremos: Tuple[float, float]) -> float:
-        """Interpola entre el valor de nivel 1 y el de nivel 20."""
+    def _segun_punto_debil(self, extremos: Tuple[float, float]) -> float:
+        """Como segun_ia, con dos salvedades: el más difícil de espantar
+        (Jaimico) usa siempre el mismo punto de la escala, sea cual sea su
+        nivel, y a quien tiene punto_debil_escala se le cuenta solo esa
+        parte de su nivel (La Chilindrina)."""
+        config = self.configuracion
+        if config.punto_debil_mas_dificil:
+            factor = PUNTO_DEBIL_FACTOR_MAS_DIFICIL
+        else:
+            factor = self._factor_ia() * config.punto_debil_escala
+        bajo, alto = extremos
+        return bajo + (alto - bajo) * factor
+
+    def segun_ia(self, extremos: Tuple[float, float]) -> float:
+        """Interpola entre el valor de nivel 1 y el de nivel 20. Es público
+        porque el monitor también escala con el nivel (lo errático que se
+        pone con El Chavo en pantalla)."""
         bajo, alto = extremos
         return bajo + (alto - bajo) * self._factor_ia()
 

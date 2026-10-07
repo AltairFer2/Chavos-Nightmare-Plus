@@ -8,9 +8,11 @@ import pygame
 import pytest
 
 from vecindad.config.interfaz import (
+    CAMARA_ERRATICO_AMPLITUD_POR_IA,
     CAMARA_ERRATICO_INTENSIDAD_MINIMA,
     CAMARA_ERRATICO_MAPA_AMPLITUD,
 )
+from vecindad.config.partida import NIVEL_IA_MAXIMO
 from vecindad.config.ventana import ANCHO_PANTALLA
 from vecindad.dominio.animatronicos import crear_elenco_noche, nombres
 from vecindad.presentacion.mapa_camaras import (
@@ -106,13 +108,15 @@ class TestMapaMovido:
 
 class TestConElChavoEnPantalla:
     @staticmethod
-    def _monitor(noche=6):
+    def _monitor(noche=6, nivel_ia=NIVEL_IA_MAXIMO):
+        """Por defecto, El Chavo a nivel 20: lo más errático que se pone."""
         from vecindad.presentacion.camaras import SistemaCamaras
 
         camaras = SistemaCamaras()
         camaras.reiniciar("primer_patio", noche)
         elenco = crear_elenco_noche(noche)
         chavo = next(a for a in elenco if a.nombre == nombres.CHAVO)
+        chavo.nivel_ia = nivel_ia
         for animatronic in elenco:
             animatronic.activo = animatronic is chavo
         camaras.activo = True
@@ -187,3 +191,55 @@ class TestConElChavoEnPantalla:
         ancho, alto = CAMARA_ERRATICO_MAPA_AMPLITUD
         assert 0 < ancho < RECT_MAPA.x
         assert 0 < alto < RECT_MAPA.y
+
+
+class TestSegunElNivelDeElChavo:
+    """Lo errático del monitor escala con su nivel de IA: con nivel 20 es
+    como siempre fue, con menos salta menos lejos y menos seguido."""
+
+    _monitor = staticmethod(TestConElChavoEnPantalla._monitor)
+
+    def _intensidad_al_verlo(self, nivel_ia):
+        camaras, elenco, chavo = self._monitor(nivel_ia=nivel_ia)
+        chavo.habitacion_actual = camaras.camara_actual
+        camaras.actualizar(FOTOGRAMA, elenco)
+        return camaras._erratico_mapa.intensidad
+
+    def test_con_nivel_maximo_es_lo_de_siempre(self):
+        assert self._intensidad_al_verlo(NIVEL_IA_MAXIMO) == pytest.approx(
+            CAMARA_ERRATICO_INTENSIDAD_MINIMA
+        )
+
+    def test_con_nivel_minimo_se_escala(self):
+        assert self._intensidad_al_verlo(1) == pytest.approx(
+            CAMARA_ERRATICO_INTENSIDAD_MINIMA * CAMARA_ERRATICO_AMPLITUD_POR_IA[0]
+        )
+
+    def test_a_mas_nivel_mas_erratico(self):
+        intensidades = [self._intensidad_al_verlo(nivel) for nivel in (1, 7, 10, 15, 20)]
+        assert intensidades == sorted(intensidades)
+        assert intensidades[0] < intensidades[-1]
+
+    def test_con_poco_nivel_el_mapa_recorre_menos(self):
+        def recorrido(nivel_ia):
+            camaras, elenco, chavo = self._monitor(noche=3, nivel_ia=nivel_ia)
+            camaras._erratico_mapa._azar = random.Random(4)
+            chavo.habitacion_actual = camaras.camara_actual
+            xs = []
+            for _ in range(110):
+                camaras.actualizar(FOTOGRAMA, elenco)
+                xs.append(camaras.desplazamiento_mapa[0])
+            return max(xs) - min(xs)
+
+        assert recorrido(1) < recorrido(NIVEL_IA_MAXIMO)
+
+    def test_el_ritmo_espacia_los_saltos(self):
+        def saltos(ritmo):
+            erratico = _erratico(3)
+            destinos = set()
+            for _ in range(600):
+                erratico.actualizar(FOTOGRAMA, 1.0, ritmo)
+                destinos.add(erratico._destino)
+            return len(destinos)
+
+        assert saltos(0.35) < saltos(1.0) * 0.6
